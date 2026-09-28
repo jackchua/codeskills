@@ -13,7 +13,7 @@ write `.cui/blueprint.yaml` and `.cui/commands.yaml`, create the directories, ge
 `ARCHITECTURE.md`, then `node cui/bin/cui.mjs sync`.
 
 Milestones this structure must serve:
-!`cat .cui/product-functions.yaml 2>/dev/null || echo "(MISSING — run /pf first, structure follows from milestones)"`
+!`cat .cui/product-functions.yaml 2>/dev/null || echo "(MISSING — run /cui:pf first, structure follows from milestones)"`
 
 Existing blueprint:
 !`cat .cui/blueprint.yaml 2>/dev/null || echo "(none yet)"`

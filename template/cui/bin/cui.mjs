@@ -84,7 +84,7 @@ ignore_paths:
   sync(db, cfg)
   ok('database initialised at .cui/cui.db')
   commands['install-hooks']()
-  console.log(`\nNext: run ${C.c('/pf')} in Claude Code to define Product Function milestones.`)
+  console.log(`\nNext: run ${C.c('/cui:pf')} in Claude Code to define Product Function milestones.`)
 }
 
 commands['install-hooks'] = () => {
@@ -147,7 +147,7 @@ commands.ingest = (args) => {
   if (r.demo?.dir) console.log(`  demo      ${r.demo.dir} (${r.demo.artifacts} artifacts)`)
   else if (r.demo?.status === 'skipped') console.log(`  demo      skipped — ${r.demo.reason}`)
   else warn('no demo recorded for this commit')
-  if (r.unparsed) warn('no CUI trailers found — commit via the ship-commit skill (/ship)')
+  if (r.unparsed) warn('no CUI trailers found — commit via the ship-commit skill (/cui:ship)')
 }
 
 commands.backfill = (args) => {
@@ -172,7 +172,7 @@ commands.status = (args) => {
     from milestones m ${only ? 'where m.key = ?' : ''} order by m.position`, only ? [only] : [])
 
   if (!ms.length) {
-    console.log(C.y('No Product Function milestones defined. Run /pf in Claude Code.'))
+    console.log(C.y('No Product Function milestones defined. Run /cui:pf in Claude Code.'))
     return
   }
 
@@ -221,10 +221,10 @@ commands.doctor = (args) => {
 
   const pf = all(db, `select key from milestones where status != 'dropped'`)
   pf.length ? ok(`${pf.length} Product Function milestones defined`)
-            : fail('no milestones — run /pf')
+            : fail('no milestones — run /cui:pf')
 
   const locked = get(db, `select value from meta where key='blueprint_locked'`)?.value === '1'
-  locked ? ok('blueprint locked') : fail('blueprint not locked — run /blueprint')
+  locked ? ok('blueprint locked') : fail('blueprint not locked — run /cui:blueprint')
 
   const hookPath = join(cfg.root, '.git/hooks/post-commit')
   existsSync(hookPath) && readFileSync(hookPath, 'utf8').includes('Installed by cui')

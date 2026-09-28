@@ -44,10 +44,10 @@ That copies in the CUI app, installs and builds it, creates `.cui/`, and install
 `post-commit` git hook. Then, in Claude Code:
 
 ```
-/pf              define the Product Function milestones
-/blueprint       lock the structure, entry points and commands
+/cui:pf              define the Product Function milestones
+/cui:blueprint       lock the structure, entry points and commands
                  …build…
-/ship            commit: tests, coverage, demo, milestone scoring
+/cui:ship            commit: tests, coverage, demo, milestone scoring
 npm run cui      the dashboard at http://localhost:4317
 ```
 
@@ -87,11 +87,11 @@ per commit:
 
 | Skill | Slash command | What it does |
 | --- | --- | --- |
-| `pf-milestones` | `/pf` | Interviews you, drafts milestones, refuses to rubber-stamp them |
-| `repo-blueprint` | `/blueprint` | Derives structure from the milestones, locks it, generates `ARCHITECTURE.md` |
-| `ship-commit` | `/ship` | Tests, coverage, demo decision, milestone scoring, commit |
+| `pf-milestones` | `/cui:pf` | Interviews you, drafts milestones, refuses to rubber-stamp them |
+| `repo-blueprint` | `/cui:blueprint` | Derives structure from the milestones, locks it, generates `ARCHITECTURE.md` |
+| `ship-commit` | `/cui:ship` | Tests, coverage, demo decision, milestone scoring, commit |
 | `commit-demo` | — | Decides if a commit needs a demo and produces one. Has playbooks per change type |
-| `code-walkthrough` | `/walkthrough` | Medium-style walkthroughs, and pointed line-level answers |
+| `code-walkthrough` | `/cui:walkthrough` | Medium-style walkthroughs, and pointed line-level answers |
 
 ## How it's built
 
@@ -107,7 +107,7 @@ Cobertura, coverage.py and Go profiles are all parsed.
 ```
 plugins/cui/
   skills/        five skills
-  commands/      /pf /blueprint /ship /walkthrough /cui
+  commands/      /cui:pf /cui:blueprint /cui:ship /cui:walkthrough /cui:status
   hooks/         gate.mjs (the PreToolUse gate), session-context.mjs
 template/
   cui/

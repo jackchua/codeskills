@@ -1,5 +1,5 @@
 ---
-description: Start the Central UI, or report project health
+description: Report project health, or start the Central UI
 argument-hint: "[start|status|doctor|sync]"
 ---
 

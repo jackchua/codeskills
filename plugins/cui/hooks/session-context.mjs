@@ -74,11 +74,11 @@ const main = async () => {
     L.push('STATUS: No Product Function milestones defined.')
     L.push('Implementation writes are BLOCKED by a PreToolUse hook until')
     L.push('.cui/product-functions.yaml has approved milestones.')
-    L.push('Next step: run the pf-milestones skill (/pf) — interview the user first.')
+    L.push('Next step: run the pf-milestones skill (/cui:pf) — interview the user first.')
   } else if (!locked) {
     L.push(`STATUS: ${ms.length} milestone(s) defined; repo blueprint NOT locked.`)
     L.push('Implementation writes are BLOCKED until .cui/blueprint.yaml has locked: true.')
-    L.push('Next step: run the repo-blueprint skill (/blueprint).')
+    L.push('Next step: run the repo-blueprint skill (/cui:blueprint).')
   } else {
     const done = ms.filter((m) => m.status === 'done').length
     L.push(`STATUS: gates open. ${done}/${ms.length} milestones done, blueprint locked.`)
@@ -98,10 +98,10 @@ const main = async () => {
     '  - Structure is fixed by .cui/blueprint.yaml. Read it before creating files.',
     '    New top-level directories need a blueprint amendment, not a judgement call.',
     '  - Every runnable command belongs in .cui/commands.yaml so the CUI can index it.',
-    '  - Commit via the ship-commit skill (/ship), never a bare `git commit`:',
+    '  - Commit via the ship-commit skill (/cui:ship), never a bare `git commit`:',
     '    tests + coverage, a demo decision, and PF scoring are part of committing.',
     '  - The CUI dashboard: npm --prefix cui start  →  http://localhost:4317',
-    '</cui-project-state>',
+    '</cui:status-project-state>',
   )
 
   emit(L.join('\n'))

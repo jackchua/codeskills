@@ -1,6 +1,6 @@
 ---
 name: pf-milestones
-description: Define, vet and amend Product Function (PF) milestones before any code is written. Use at the start of a new project, when the user says "let's build X", asks to scaffold or plan a project, runs /pf, or when a write is blocked because .cui/product-functions.yaml is missing or empty. Also use when adding, splitting, re-scoping or closing a milestone mid-project.
+description: Define, vet and amend Product Function (PF) milestones before any code is written. Use at the start of a new project, when the user says "let's build X", asks to scaffold or plan a project, runs /cui:pf, or when a write is blocked because .cui/product-functions.yaml is missing or empty. Also use when adding, splitting, re-scoping or closing a milestone mid-project.
 ---
 
 # Product Function milestones
@@ -122,10 +122,10 @@ node cui/bin/cui.mjs status        # prints current milestone progress
 
 Tell the user, in three lines:
 - the milestone list is written and synced
-- the next step is `/blueprint` (repo structure must be locked before code)
+- the next step is `/cui:blueprint` (repo structure must be locked before code)
 - `npm run cui` (or `npm --prefix cui start`) opens the CUI if they want to see it
 
-Do not start implementing. `/blueprint` is next.
+Do not start implementing. `/cui:blueprint` is next.
 
 ## Amending
 

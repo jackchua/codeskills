@@ -1,6 +1,6 @@
 ---
 name: repo-blueprint
-description: Lock the repository structure, entry points and CLI command catalogue before any code is written. Use after PF milestones are approved, when the user runs /blueprint, when a write is blocked because .cui/blueprint.yaml is missing or unlocked, or when a change genuinely needs a new top-level directory, entry point or runnable command.
+description: Lock the repository structure, entry points and CLI command catalogue before any code is written. Use after PF milestones are approved, when the user runs /cui:blueprint, when a write is blocked because .cui/blueprint.yaml is missing or unlocked, or when a change genuinely needs a new top-level directory, entry point or runnable command.
 ---
 
 # Repo blueprint

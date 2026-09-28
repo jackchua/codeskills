@@ -83,7 +83,7 @@ const main = async () => {
     deny(
       `Blocked writing ${relPosix}: Product Function milestones are not defined yet.\n\n` +
       `This project gates implementation until the product is agreed. Run the ` +
-      `pf-milestones skill (or /pf) to interview the user and write ` +
+      `pf-milestones skill (or /cui:pf) to interview the user and write ` +
       `.cui/product-functions.yaml, and get the user's explicit approval of the list.\n\n` +
       `Docs, .cui/, demos/ and the cui/ app remain writable. Do not route ` +
       `implementation code through those paths to get around this.`,
@@ -97,7 +97,7 @@ const main = async () => {
     deny(
       `Blocked writing ${relPosix}: the repo blueprint is not locked.\n\n` +
       `Milestones are defined, but where code lives has not been decided. Run the ` +
-      `repo-blueprint skill (or /blueprint) to agree the directory layout, boundary rules, ` +
+      `repo-blueprint skill (or /cui:blueprint) to agree the directory layout, boundary rules, ` +
       `entry points and command catalogue, then set locked: true in .cui/blueprint.yaml.`,
     )
   }

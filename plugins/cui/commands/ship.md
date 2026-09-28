@@ -14,7 +14,7 @@ Change size:
 !`git diff --stat HEAD 2>/dev/null | tail -5`
 
 Milestones to score against:
-!`node cui/bin/cui.mjs status --brief 2>/dev/null || cat .cui/product-functions.yaml 2>/dev/null | grep -E '^\s+(key|title|status):' || echo "(no milestones — run /pf)"`
+!`node cui/bin/cui.mjs status --brief 2>/dev/null || cat .cui/product-functions.yaml 2>/dev/null | grep -E '^\s+(key|title|status):' || echo "(no milestones — run /cui:pf)"`
 
 Work through every step of the skill in order. Do not skip coverage, and do not skip the
 demo decision even if the answer is no.

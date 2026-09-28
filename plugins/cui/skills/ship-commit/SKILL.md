@@ -1,6 +1,6 @@
 ---
 name: ship-commit
-description: Commit work the CUI way - run tests and coverage, decide and produce a visual demo, score the change against PF milestones, then commit and ingest into the CUI. Use whenever the user asks to commit, ship, or "save this", runs /ship, or when a chunk of implementation is finished and ready to land.
+description: Commit work the CUI way - run tests and coverage, decide and produce a visual demo, score the change against PF milestones, then commit and ingest into the CUI. Use whenever the user asks to commit, ship, or "save this", runs /cui:ship, or when a chunk of implementation is finished and ready to land.
 ---
 
 # Ship a commit

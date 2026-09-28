@@ -1,6 +1,6 @@
 ---
 name: code-walkthrough
-description: Write a Medium-style narrative walkthrough of a commit, or answer a pointed question about a specific line, function or decision in it. Use when the user asks to explain, walk through or understand a commit or file, runs /walkthrough, or when the CUI server invokes a walkthrough or question job.
+description: Write a Medium-style narrative walkthrough of a commit, or answer a pointed question about a specific line, function or decision in it. Use when the user asks to explain, walk through or understand a commit or file, runs /cui:walkthrough, or when the CUI server invokes a walkthrough or question job.
 ---
 
 # Code walkthrough

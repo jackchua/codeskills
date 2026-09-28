@@ -1,6 +1,6 @@
 ---
 name: commit-demo
-description: Decide whether a commit needs a visual demo and produce one that proves the functionality actually works. Use during /ship, when asked to "prove it works", "show me", or "demo this", and whenever a commit adds or changes observable behaviour - data generation, API endpoints, UI, CLI output, migrations, integrations.
+description: Decide whether a commit needs a visual demo and produce one that proves the functionality actually works. Use during /cui:ship, when asked to "prove it works", "show me", or "demo this", and whenever a commit adds or changes observable behaviour - data generation, API endpoints, UI, CLI output, migrations, integrations.
 ---
 
 # Commit demos

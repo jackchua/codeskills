@@ -148,17 +148,17 @@ if (flags.has('--no-install')) {
 console.log(`
 ${C.b('Done.')} What happens next, in order:
 
-  ${C.c('1.')} In Claude Code, run ${C.c('/pf')}
+  ${C.c('1.')} In Claude Code, run ${C.c('/cui:pf')}
      Defines the Product Function milestones. It interviews you first and will not
      write code until you approve the list.
 
-  ${C.c('2.')} Run ${C.c('/blueprint')}
+  ${C.c('2.')} Run ${C.c('/cui:blueprint')}
      Locks the directory layout, boundary rules, entry points and command catalogue.
 
      ${C.dim('Until both are done, a PreToolUse hook blocks implementation writes.')}
      ${C.dim('That is the point — it is what stops the codebase getting away from you.')}
 
-  ${C.c('3.')} Build, and commit with ${C.c('/ship')}
+  ${C.c('3.')} Build, and commit with ${C.c('/cui:ship')}
      Tests, coverage, a demo decision and milestone scoring happen as part of committing.
 
   ${C.c('4.')} Open the dashboard
