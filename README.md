@@ -1,4 +1,4 @@
-# valent-mono
+# codeskills
 
 A starting point for projects I build with AI, designed around one failure mode: *the
 codebase gets away from you*. Six weeks in, it works, and you can no longer say what's in it,
@@ -29,15 +29,15 @@ Two halves:
 
 ```bash
 claude
-> /plugin marketplace add ~/source/valent-mono
-> /plugin install cui@valent
+> /plugin marketplace add ~/source/codeskills
+> /plugin install cui@codeskills
 ```
 
 **Into a new project:**
 
 ```bash
 mkdir ~/source/my-thing && cd ~/source/my-thing
-node ~/source/valent-mono/scripts/scaffold.mjs
+node ~/source/codeskills/scripts/scaffold.mjs
 ```
 
 That copies in the CUI app, installs and builds it, creates `.cui/`, and installs a

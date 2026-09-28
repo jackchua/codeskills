@@ -1,0 +1,37 @@
+version: 1
+locked: true
+locked_at: "2026-09-28"
+stack:
+  language: javascript
+  runtime: "node 26"
+  package_manager: npm
+  test_runner: "node:test"
+conventions:
+  files: kebab-case
+  tests: "colocated, *.test.mjs"
+  exports: "named only"
+layout:
+  - path: src
+    purpose: "Application code. Nothing here reaches outside its own layer."
+    owns: ["seeding", "queries"]
+    forbidden: ["direct process.env reads outside src/config.mjs"]
+    serves: [PF-1, PF-2]
+  - path: scripts
+    purpose: "Operator entry points. Thin wrappers over src/."
+    owns: ["CLI argument parsing"]
+    forbidden: ["business logic"]
+    serves: [PF-1]
+entrypoints:
+  - id: seed
+    kind: cli
+    command: "npm run db:seed"
+    path: src/seed.mjs
+    description: "Generates synthetic customers and orders."
+    serves: [PF-1]
+  - id: api
+    kind: http
+    command: "npm run dev:api"
+    path: src/api.mjs
+    port: 3000
+    description: "Revenue API. Not built yet."
+    serves: [PF-2]

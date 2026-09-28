@@ -1,0 +1,11 @@
+{
+  "name": "cui",
+  "version": "1.0.0",
+  "description": "Keeps AI-written codebases understandable: PF milestones before code, a locked repo blueprint, and a Central UI tracking commits, coverage, demos and walkthroughs.",
+  "author": {
+    "name": "Jack",
+    "email": "jack@nigiriventures.com"
+  },
+  "keywords": ["milestones", "architecture", "coverage", "walkthrough", "dashboard"],
+  "hooks": "./hooks/hooks.json"
+}

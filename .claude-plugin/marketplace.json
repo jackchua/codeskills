@@ -1,0 +1,18 @@
+{
+  "name": "codeskills",
+  "owner": {
+    "name": "Jack",
+    "email": "jack@nigiriventures.com"
+  },
+  "metadata": {
+    "description": "Jack's marketplace: disciplined AI-coding workflow plugins.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "cui",
+      "source": "./plugins/cui",
+      "description": "Product-Function milestones, locked repo blueprints, and a Central UI that tracks every commit with coverage, demos and generated walkthroughs."
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+version: 1
+product: "OrderLens"
+north_star: "A analyst can explore realistic order data without touching production."
+out_of_scope:
+  - "Real customer data"
+  - "Multi-tenant auth"
+milestones:
+  - key: PF-1
+    title: "A developer can spin up a realistic Postgres dataset in one command"
+    why: "Everything downstream needs data that behaves like the real thing."
+    demo: "psql row counts, random sample rows, and realism assertions all passing."
+    depends_on: []
+    status: in_progress
+    acceptance:
+      - id: PF-1.1
+        text: "npm run db:seed populates customers and orders in under 10s"
+        status: open
+      - id: PF-1.2
+        text: "Zero orphan orders; order totals have coefficient of variation > 0.3"
+        status: open
+      - id: PF-1.3
+        text: "No placeholder emails or timestamps outside the intended window"
+        status: open
+  - key: PF-2
+    title: "An analyst can see revenue by month in the browser"
+    why: "The first thing anyone asks the data."
+    demo: "Screenshot of the chart with axis labels, plus the query behind it."
+    depends_on: [PF-1]
+    status: not_started
+    acceptance:
+      - id: PF-2.1
+        text: "Chart renders 12 months of revenue from the seeded data"
+        status: open
+      - id: PF-2.2
+        text: "Empty state shown when no orders exist"
+        status: open

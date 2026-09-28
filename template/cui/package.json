@@ -1,0 +1,42 @@
+{
+  "name": "cui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Central UI \u2014 milestones, commits, coverage, demos and walkthroughs for this repo.",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "cui": "./bin/cui.mjs"
+  },
+  "scripts": {
+    "start": "node bin/cui.mjs serve",
+    "dev": "node bin/cui.mjs serve --dev",
+    "build": "vite build",
+    "sync": "node bin/cui.mjs sync",
+    "doctor": "node bin/cui.mjs doctor",
+    "backfill": "node bin/cui.mjs backfill"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "hono": "^4.6.13",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.2",
+    "@vitejs/plugin-react": "^4.3.4",
+    "highlight.js": "^11.10.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^9.0.1",
+    "react-router-dom": "^7.0.2",
+    "remark-gfm": "^4.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}

@@ -1,0 +1,26 @@
+version: 1
+commands:
+  - name: "db:seed"
+    command: "npm run db:seed"
+    category: database
+    description: "Populate Postgres with synthetic customers and orders."
+    entrypoint: src/seed.mjs
+    safe: false
+    args:
+      - flag: "--rows <n>"
+        description: "Rows per table. Default 1000."
+      - flag: "--truncate"
+        description: "Empty tables first."
+    example: "npm run db:seed -- --rows 500 --truncate"
+    outputs: "Prints per-table row counts."
+  - name: "test"
+    command: "npm test"
+    category: test
+    description: "Run the unit test suite with coverage."
+    safe: true
+  - name: "dev:api"
+    command: "npm run dev:api"
+    category: dev
+    description: "Start the revenue API on port 3000."
+    entrypoint: src/api.mjs
+    safe: true

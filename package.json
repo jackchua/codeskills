@@ -1,0 +1,18 @@
+{
+  "name": "codeskills",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A disciplined starting point for AI-written codebases: PF milestones, a locked blueprint, and a Central UI that tracks every commit.",
+  "bin": {
+    "create-cui": "./scripts/scaffold.mjs"
+  },
+  "scripts": {
+    "scaffold": "node scripts/scaffold.mjs",
+    "test": "node --test tests/",
+    "pretest": "npm --prefix template/cui install --no-audit --no-fund --silent"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
