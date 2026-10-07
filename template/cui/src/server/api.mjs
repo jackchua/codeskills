@@ -149,7 +149,8 @@ export function createApi(db, cfg) {
         from commit_milestones cm left join milestones m on m.key = cm.milestone_key
         where cm.sha = ?`, [full]).map((r) => hydrate(r, 'criteria_met')),
       demo,
-      walkthrough: get(db, `select sha, status, error, duration_ms, started_at, finished_at
+      // markdown included: WalkthroughView renders this row directly when status is 'ready'
+      walkthrough: get(db, `select sha, status, markdown, error, duration_ms, started_at, finished_at
                             from walkthroughs where sha = ?`, [full]) ?? null,
       question_count: get(db, `select count(*) n from questions where sha = ?`, [full]).n,
     })
