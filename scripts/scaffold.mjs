@@ -4,7 +4,7 @@
 
 import { execFileSync, execSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createInterface } from 'node:readline/promises'
 
@@ -48,7 +48,8 @@ if (existsSync(join(target, 'cui')) && !force) {
 // 1. the app -----------------------------------------------------------------
 cpSync(join(TEMPLATE, 'cui'), join(target, 'cui'), {
   recursive: true,
-  filter: (src) => !/[/\\](node_modules|dist)([/\\]|$)/.test(src),
+  // match against the path inside the template: run via npx, TEMPLATE itself is under node_modules/
+  filter: (src) => !/(^|[/\\])(node_modules|dist)([/\\]|$)/.test(relative(TEMPLATE, src)),
 })
 ok('copied cui/')
 
