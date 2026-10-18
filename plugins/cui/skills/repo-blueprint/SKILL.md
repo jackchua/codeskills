@@ -38,6 +38,9 @@ Present to the user, before writing anything:
 3. **Entry points** — every way a human or machine starts this system.
 4. **The command catalogue** — everything runnable from a terminal.
 5. **Naming conventions** — file casing, test file location and suffix, module boundaries.
+6. **Where each level of test lives** — colocated unit tests, plus homes for `tests/e2e/`,
+   `tests/contract/` or whatever the feature test plans will need — and a test runner that
+   writes JUnit XML. After locking, the gate blocks test directories the blueprint doesn't list.
 
 Ask the user to approve or correct it. Push back if they ask for a structure that has no
 home for something a milestone clearly needs.
@@ -140,23 +143,34 @@ and it reports them as `planned` rather than `broken`.
 
 ## Step 6 — Hand off
 
-Tell the user: structure is locked, `ARCHITECTURE.md` is generated, commands are searchable
-in the CUI, and implementation can now begin against PF-1.
+Tell the user: structure is locked, `ARCHITECTURE.md` is generated, and commands are
+searchable in the CUI. The next step is `/cui:features`, which builds the feature registry.
+Implementation of each feature then goes through `/cui:tdd`.
 
 ## Amending a locked blueprint
 
-Structural drift is the failure mode this whole file exists to prevent, so amendments are
-deliberate:
+Structural drift is the failure mode this whole file exists to prevent, so once the blueprint
+is locked **only the user changes it**. The gate refuses your edits to `.cui/blueprint.yaml`
+and refuses writes into top-level directories the blueprint doesn't list.
 
 1. **Try to fit the existing structure first.** Most "I need a new directory" moments are
    really "I haven't read `ARCHITECTURE.md`". Say which existing directory you considered
    and why it doesn't fit.
-2. If it genuinely doesn't fit, tell the user: what you want to add, which milestone forces
-   it, and what rule it will carry. Get an explicit yes.
-3. Update `.cui/blueprint.yaml`, bump nothing — the file is not versioned per-change, git is.
-4. Regenerate `ARCHITECTURE.md`, run `node cui/bin/cui.mjs sync`.
-5. Note the amendment in the commit body as `Blueprint: added src/x (PF-4 requires ...)`.
-   The CUI surfaces these so structural changes are auditable.
+2. If it genuinely doesn't fit, draft the complete amended blueprint in a scratch file and
+   write a proposal:
+   ```bash
+   node cui/bin/cui.mjs propose file --target .cui/blueprint.yaml --from <draft> \
+     --title "Add src/workers" --why "PF-4 needs a queue consumer; src/api is request-path only"
+   ```
+3. Tell the user what you proposed, which milestone forces it, and what boundary rule the new
+   directory carries. They approve with `cui approve <id>` or on the CUI Approvals page, which
+   shows the diff. You cannot approve it, and the gate blocks you from trying.
+4. Once it's approved: regenerate `ARCHITECTURE.md`, run `node cui/bin/cui.mjs sync`, and
+   commit the blueprint, the proposal file and `.cui/approvals.log` together. Note it in the
+   commit as `Blueprint: added src/x (proposal <id>)`.
+
+CI fails any change to the locked blueprint that has no matching approval, so a hand edit
+that slips past the gate still doesn't merge.
 
 Never add a directory silently. Never leave a new runnable command out of `commands.yaml` —
 an undiscoverable command is how a codebase becomes opaque.

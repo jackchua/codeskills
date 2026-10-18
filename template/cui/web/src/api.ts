@@ -31,6 +31,11 @@ export const api = {
   commands: (q = '') => req<any[]>(`/commands?q=${encodeURIComponent(q)}`),
   search: (q: string) => req<any[]>(`/search?q=${encodeURIComponent(q)}`),
   health: () => req<any>('/health'),
+  registry: () => req<any>('/registry'),
+  feature: (id: string) => req<any>(`/features/${encodeURIComponent(id)}`),
+  approvals: () => req<any>('/approvals'),
+  decide: (id: string, decision: 'approve' | 'reject', note?: string) =>
+    req<any>(`/approvals/${encodeURIComponent(id)}`, { method: 'POST', body: JSON.stringify({ decision, note }) }),
   sync: () => req<any>('/sync', { method: 'POST' }),
 }
 

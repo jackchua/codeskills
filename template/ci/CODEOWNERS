@@ -1,0 +1,12 @@
+# Installed by the CUI scaffolder. With "Require review from Code Owners" turned on in branch
+# protection, nobody — human or agent — merges a change to the project's contract unreviewed.
+# Replace @OWNER with your GitHub handle (or a team).
+
+/.cui/product-functions.yaml  @OWNER
+/.cui/blueprint.yaml          @OWNER
+/.cui/features.yaml           @OWNER
+/.cui/exceptions.yaml         @OWNER
+/.cui/approvals.log           @OWNER
+/.cui/registry-baseline.json  @OWNER
+/.cui/mutation/               @OWNER
+/.github/                     @OWNER

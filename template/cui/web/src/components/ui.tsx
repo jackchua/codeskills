@@ -47,6 +47,12 @@ const STATUS_TONE: Record<string, string> = {
 export const StatusBadge = ({ status }: { status: string }) =>
   <Badge tone={STATUS_TONE[status] ?? ''}>{(status ?? '').replace(/_/g, ' ')}</Badge>
 
+const STATE_TONE: Record<string, string> = {
+  passing: 'green', failing: 'red', untested: 'red', excepted: 'yellow', planned: '', retired: '',
+}
+export const FeatureStateBadge = ({ state }: { state: string }) =>
+  <Badge tone={STATE_TONE[state] ?? ''}>{state}</Badge>
+
 export function CoverageBar({ pct, label }: { pct: number | null; label?: string }) {
   if (pct === null || pct === undefined) {
     return <span className="faint mono small">{label ? `${label} ` : ''}n/a</span>

@@ -18,9 +18,9 @@ const globToRe = (glob) =>
         .replace(/\*\*\//g, '\u0000')
         .replace(/\*\*/g, '\u0001')
         .replace(/\*/g, '[^/]*')
+        .replace(/\?/g, '[^/]') // before the groups below, whose own `?` must survive
         .replace(/\u0000/g, '(?:.*/)?')
-        .replace(/\u0001/g, '.*')
-        .replace(/\?/g, '[^/]') +
+        .replace(/\u0001/g, '.*') +
       '$',
   )
 

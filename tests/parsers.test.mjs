@@ -187,6 +187,18 @@ describe('ignore globs', () => {
     assert.equal(matchesAny('src/cui.ts', ['cui/**']), false)
   })
 
+  test('a leading **/ matches at any depth, including the root', () => {
+    assert.equal(matchesAny('src/math.test.js', ['**/*.test.*']), true)
+    assert.equal(matchesAny('math.test.js', ['**/*.test.*']), true)
+    assert.equal(matchesAny('apps/mail/tests/send.ts', ['**/tests/**']), true)
+    assert.equal(matchesAny('src/math.js', ['**/*.test.*']), false)
+  })
+
+  test('? matches exactly one character', () => {
+    assert.equal(matchesAny('a1.js', ['a?.js']), true)
+    assert.equal(matchesAny('a12.js', ['a?.js']), false)
+  })
+
   test('* does not cross a slash', () => {
     assert.equal(matchesAny('src/a.js', ['src/*']), true)
     assert.equal(matchesAny('src/deep/a.js', ['src/*']), false)

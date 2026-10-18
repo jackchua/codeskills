@@ -4,7 +4,7 @@ import { api } from '../api'
 import { Badge } from './ui'
 
 const TYPE_TONE: Record<string, string> = {
-  command: 'blue', entrypoint: 'purple', milestone: 'green', commit: '', directory: 'yellow',
+  command: 'blue', entrypoint: 'purple', milestone: 'green', commit: '', directory: 'yellow', feature: 'green',
 }
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {
@@ -33,7 +33,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         <input
           ref={inputRef}
           type="search"
-          placeholder="Search commands, entry points, milestones, commits, directories…"
+          placeholder="Search commands, entry points, milestones, features, commits, directories…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {

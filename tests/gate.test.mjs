@@ -92,10 +92,16 @@ describe('the PreToolUse gate', () => {
     assert.equal(decision(write('src/a.ts')), 'allow')
   })
 
-  test('a directory outside the blueprint is allowed, but flagged', () => {
+  test('a directory outside the locked blueprint is blocked, pointing at a proposal', () => {
     const r = write('lib/b.ts')
-    assert.equal(decision(r), 'allow')
+    assert.equal(decision(r), 'deny')
     assert.match(r.hookSpecificOutput.permissionDecisionReason, /not in the locked blueprint/i)
+    assert.match(r.hookSpecificOutput.permissionDecisionReason, /cui\/bin\/cui\.mjs propose/)
+  })
+
+  test('root files and dot-directories are not structural', () => {
+    assert.equal(decision(write('package.json')), 'allow')
+    assert.equal(decision(write('.vscode/settings.json')), 'allow')
   })
 
   test('enforce: false lifts the gates entirely', () => {
@@ -120,6 +126,138 @@ describe('the PreToolUse gate', () => {
   })
 })
 
+describe('protected files', () => {
+  const FEATURES = `version: 1
+features:
+  - id: FR-MAIL-001
+    title: "Send"
+    milestone: PF-1
+    status: active
+    test_plan:
+      - level: unit
+        case: "a"
+      - level: e2e
+        case: "b"
+  - id: FR-MAIL-002
+    title: "Drafts"
+    milestone: PF-1
+    status: planned
+    test_plan:
+      - level: unit
+        case: "c"
+`
+  const edit = (relPath, old_string, new_string) => runHook(GATE, {
+    cwd: root, tool_name: 'Edit', tool_input: { file_path: join(root, relPath), old_string, new_string },
+  })
+  const writeContent = (relPath, content) => runHook(GATE, {
+    cwd: root, tool_name: 'Write', tool_input: { file_path: join(root, relPath), content },
+  })
+  const bash = (command) => runHook(GATE, { cwd: root, tool_name: 'Bash', tool_input: { command } })
+
+  before(() => {
+    writeFileSync(join(root, '.cui/features.yaml'), FEATURES)
+    writeFileSync(join(root, '.cui/exceptions.yaml'), `version: 1
+exceptions:
+  - id: EX-1
+    feature: FR-MAIL-001
+    status: proposed
+    expires: "2027-01-01"
+`)
+  })
+
+  test('the locked blueprint cannot be edited directly', () => {
+    const r = edit('.cui/blueprint.yaml', 'purpose: "code"', 'purpose: "anything"')
+    assert.equal(decision(r), 'deny')
+    assert.match(r.hookSpecificOutput.permissionDecisionReason, /locked/)
+  })
+
+  test('adding a feature, adding a plan case and promoting planned to active are allowed', () => {
+    assert.equal(decision(edit('.cui/features.yaml', '    status: planned', '    status: active')), 'allow')
+    assert.equal(decision(writeContent('.cui/features.yaml', `${FEATURES}  - id: FR-MAIL-003
+    title: "Search"
+    status: planned
+    test_plan:
+      - level: unit
+        case: "d"
+`)), 'allow')
+    assert.equal(decision(edit('.cui/features.yaml', '        case: "c"\n', '        case: "c"\n      - level: e2e\n        case: "c2"\n')), 'allow')
+  })
+
+  test('removing, retiring, demoting or shrinking a feature is blocked', () => {
+    const removed = FEATURES.replace(/  - id: FR-MAIL-002[\s\S]*$/, '')
+    assert.match(writeContent('.cui/features.yaml', removed).hookSpecificOutput.permissionDecisionReason, /removes FR-MAIL-002/)
+    assert.match(edit('.cui/features.yaml', '    status: active', '    status: retired').hookSpecificOutput.permissionDecisionReason, /retires FR-MAIL-001/)
+    assert.match(edit('.cui/features.yaml', '    status: active', '    status: planned').hookSpecificOutput.permissionDecisionReason, /demotes FR-MAIL-001/)
+    assert.match(edit('.cui/features.yaml', '      - level: e2e\n        case: "b"\n', '').hookSpecificOutput.permissionDecisionReason, /shrinks FR-MAIL-001/)
+  })
+
+  test('lowering risk, lowering a mutation threshold or narrowing source is blocked', () => {
+    const MUT = FEATURES.replace('    status: active\n', '    status: active\n    risk: high\n    mutation_threshold: 80\n    source:\n      - "src/send/**"\n      - src/mime.ts\n')
+    writeFileSync(join(root, '.cui/features.yaml'), MUT)
+    const reason = (o, n) => edit('.cui/features.yaml', o, n)?.hookSpecificOutput?.permissionDecisionReason ?? 'allow'
+    assert.match(reason('risk: high', 'risk: normal'), /lowers FR-MAIL-001 from risk: high/)
+    assert.match(reason('mutation_threshold: 80', 'mutation_threshold: 60'), /lowers FR-MAIL-001's mutation threshold/)
+    assert.match(reason('      - src/mime.ts\n', ''), /removes src\/mime.ts from FR-MAIL-001's source/)
+    assert.equal(reason('mutation_threshold: 80', 'mutation_threshold: 85'), 'allow')
+    assert.equal(reason('      - src/mime.ts\n', '      - src/mime.ts\n      - src/smtp.ts\n'), 'allow')
+    // inline form
+    writeFileSync(join(root, '.cui/features.yaml'), MUT.replace('    source:\n      - "src/send/**"\n      - src/mime.ts\n', '    source: ["src/send/**", src/mime.ts]\n'))
+    assert.match(reason('source: ["src/send/**", src/mime.ts]', 'source: ["src/send/**"]'), /removes src\/mime.ts/)
+    writeFileSync(join(root, '.cui/features.yaml'), FEATURES)
+  })
+
+  test('the agent can propose an exception but never approve one', () => {
+    assert.equal(decision(edit('.cui/exceptions.yaml', '"2027-01-01"', '"2027-02-01"')), 'allow')
+    const r = edit('.cui/exceptions.yaml', 'status: proposed', 'status: approved')
+    assert.equal(decision(r), 'deny')
+    assert.match(r.hookSpecificOutput.permissionDecisionReason, /cui approve EX-1/)
+  })
+
+  test('tool-owned files are never written directly', () => {
+    for (const p of ['.cui/approvals.log', '.cui/registry-baseline.json', '.cui/tdd/FR-MAIL-001.json', '.cui/mutation/FR-MAIL-001.json']) {
+      assert.equal(decision(writeContent(p, '{}')), 'deny', p)
+    }
+  })
+
+  test('the CI workflow is protected once it exists', () => {
+    assert.equal(decision(writeContent('.github/workflows/cui.yml', 'x')), 'allow')
+    mkdirSync(join(root, '.github/workflows'), { recursive: true })
+    writeFileSync(join(root, '.github/workflows/cui.yml'), 'name: cui\n')
+    assert.equal(decision(writeContent('.github/workflows/cui.yml', 'x')), 'deny')
+    assert.equal(decision(writeContent('.github/workflows/other.yml', 'x')), 'allow')
+  })
+
+  test('the shell cannot approve, or write protected files', () => {
+    for (const cmd of [
+      'node cui/bin/cui.mjs approve EX-1',
+      'npx cui reject 2026-10-17-x',
+      'node cui/bin/cui.mjs ratchet accept --base main',
+      'curl -X POST localhost:4317/api/approvals/EX-1',
+      'echo x >> .cui/approvals.log',
+      "sed -i '' 's/active/retired/' .cui/features.yaml",
+      'cat draft.yaml > .cui/blueprint.yaml',
+      'echo {} | tee .cui/registry-baseline.json',
+      'rm -rf .cui/tdd',
+      'git checkout -- .cui/exceptions.yaml',
+      'cp /tmp/f.yaml .cui/features.yaml',
+      'echo {} > .cui/mutation/FR-MAIL-001.json',
+    ]) assert.equal(decision(bash(cmd)), 'deny', cmd)
+  })
+
+  test('the shell can still read protected files and run the cui tools', () => {
+    for (const cmd of [
+      'cat .cui/features.yaml',
+      'grep FR- .cui/features.yaml > /tmp/ids.txt',
+      'cp .cui/features.yaml /tmp/backup.yaml',
+      'node cui/bin/cui.mjs registry check --record',
+      'node cui/bin/cui.mjs tdd green FR-MAIL-001',
+      'node cui/bin/cui.mjs approvals',
+      'node cui/bin/cui.mjs mutation --feature FR-MAIL-001',
+      'git status && git diff .cui/features.yaml',
+    ]) assert.equal(decision(bash(cmd)), 'allow', cmd)
+  })
+})
+
 describe('the SessionStart context hook', () => {
   test('reports gate state and milestone progress', () => {
     const r = runHook(SESSION, { cwd: root, hook_event_name: 'SessionStart', source: 'startup' })
@@ -127,6 +265,9 @@ describe('the SessionStart context hook', () => {
     assert.match(ctx, /STATUS: gates open/)
     assert.match(ctx, /PF-1 \(not_started\) \[1\/2 criteria\] — Ship a thing/)
     assert.match(ctx, /ship-commit skill/)
+    assert.match(ctx, /Feature registry: 1 active, 1 planned, 0 retired/)
+    assert.match(ctx, /1 item\(s\) are waiting on the user's approval/)
+    assert.match(ctx, /cui tdd red FR-X/)
   })
 
   test('says nothing at all in a non-CUI project', () => {

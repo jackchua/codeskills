@@ -8,6 +8,10 @@ import { ingestCommit } from './ingest.mjs'
 import { startWalkthrough, askQuestion, queueDepth } from './jobs.mjs'
 import { claudeAvailable } from './claude.mjs'
 import { loadCoverage, findCoverageFile } from './coverage.mjs'
+import { check, readApprovals, readState, exceptionInForce, daysBetween } from './registry.mjs'
+import { approve, reject, pendingApprovals, listProposals } from './approvals.mjs'
+import { readCycles } from './tdd.mjs'
+import { readMutationSummaries } from './mutation.mjs'
 
 const hydrate = (row, ...fields) => {
   if (!row) return row
@@ -62,9 +66,18 @@ export function createApi(db, cfg) {
       walkthroughs_ready: get(db, `select count(*) n from walkthroughs where status = 'ready'`).n,
       coverage_file: findCoverageFile(cfg) ? relative(cfg.root, findCoverageFile(cfg)) : null,
       queue: queueDepth(),
+      unexplained_test_changes: get(db, `select count(*) n from commits where test_change = 'unexplained'`).n,
     }
 
-    return c.json({ meta, milestones, commits, trend, health })
+    let registry = null
+    try {
+      const r = check(cfg)
+      registry = { ok: r.ok, summary: r.summary, errors: r.errors.length, results_at: r.results_at }
+    } catch (err) { registry = { error: err.message } }
+    const pending = pendingApprovals(cfg)
+    health.approvals_pending = pending.proposals.length + pending.exceptions.length
+
+    return c.json({ meta, milestones, commits, trend, health, registry })
   })
 
   // -------------------------------------------------------------- milestones
@@ -153,6 +166,7 @@ export function createApi(db, cfg) {
       walkthrough: get(db, `select sha, status, markdown, error, duration_ms, started_at, finished_at
                             from walkthroughs where sha = ?`, [full]) ?? null,
       question_count: get(db, `select count(*) n from questions where sha = ?`, [full]).n,
+      features: all(db, `select feature_id, kind, note, verified from commit_features where sha = ?`, [full]),
     })
   })
 
@@ -203,6 +217,81 @@ export function createApi(db, cfg) {
 
   api.get('/questions/:id', (c) =>
     c.json(get(db, `select * from questions where id = ?`, [Number(c.req.param('id'))]) ?? { error: 'not found' }))
+
+  // ---------------------------------------------------------------- registry
+  // Computed live from the YAML and the JUnit files on disk, so the page always shows the
+  // latest local test run. Per-commit history comes from feature_results.
+  const slim = (f) => ({ ...f, tests: undefined, test_count: f.tests.length })
+
+  api.get('/registry', (c) => {
+    const r = check(cfg)
+    const touched = new Map(all(db, `select feature_id, count(*) n, max(c.committed_at) last
+                                     from commit_features cf join commits c on c.sha = cf.sha
+                                     group by feature_id`).map((x) => [x.feature_id, x]))
+    return c.json({
+      ok: r.ok, errors: r.errors, warnings: r.warnings, summary: r.summary,
+      results_at: r.results_at, result_files: r.result_files,
+      features: r.features.map((f) => ({ ...slim(f), commits: touched.get(f.id)?.n ?? 0, last_commit_at: touched.get(f.id)?.last ?? null })),
+      exceptions: stateExceptions(),
+    })
+  })
+
+  const stateExceptions = () => readState(cfg).exceptions.filter((e) => e?.id)
+    .map((e) => ({
+      ...e, expires: e.expires == null ? null : String(e.expires), in_force: exceptionInForce(e),
+      days_left: e.expires ? daysBetween(new Date().toISOString().slice(0, 10), String(e.expires)) : null,
+    }))
+
+  api.get('/features/:id', (c) => {
+    const id = c.req.param('id')
+    const r = check(cfg)
+    const feature = r.features.find((f) => f.id === id)
+    if (!feature) return c.json({ error: 'unknown feature' }, 404)
+    return c.json({
+      feature,
+      errors: r.errors.filter((e) => e.id === id),
+      warnings: r.warnings.filter((w) => w.id === id),
+      exceptions: stateExceptions().filter((e) => e.feature === id),
+      milestone: feature.milestone ? hydrate(get(db, `select * from milestones where key = ?`, [feature.milestone]), 'depends_on') ?? null : null,
+      tdd: readCycles(cfg, id),
+      mutation: readMutationSummaries(cfg)[id] ?? null,
+      commits: all(db, `
+        select c.sha, c.short_sha, c.subject, c.committed_at, c.author_name, cf.kind, cf.note, cf.verified,
+               cov.diff_pct
+        from commit_features cf join commits c on c.sha = cf.sha
+        left join coverage cov on cov.sha = c.sha
+        where cf.feature_id = ? order by c.committed_at desc`, [id]),
+      history: all(db, `
+        select c.short_sha, c.committed_at, fr.state, fr.passing, fr.failing
+        from feature_results fr join commits c on c.sha = fr.sha
+        where fr.feature_id = ? order by c.committed_at asc limit 200`, [id]),
+    })
+  })
+
+  // --------------------------------------------------------------- approvals
+  api.get('/approvals', (c) => {
+    const pending = pendingApprovals(cfg)
+    return c.json({
+      proposals: pending.proposals,
+      exceptions: pending.exceptions,
+      decided: listProposals(cfg, { all: true }).filter((p) => p.status !== 'pending').map(({ current, content, ...p }) => p),
+      log: readApprovals(cfg).reverse().slice(0, 100),
+    })
+  })
+
+  // The CUI is bound to 127.0.0.1 and this is the human's button. The plugin's gate refuses
+  // Bash commands that call it, so the agent cannot approve its own proposals through here.
+  api.post('/approvals/:id', async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const id = c.req.param('id')
+    try {
+      const out = body.decision === 'reject'
+        ? reject(cfg, id, { note: body.note ?? null })
+        : approve(cfg, id, { note: body.note ?? null })
+      sync(db, cfg)
+      return c.json(out)
+    } catch (err) { return c.json({ error: err.message }, 400) }
+  })
 
   // --------------------------------------------------------------- structure
   api.get('/structure', (c) => {
@@ -263,6 +352,12 @@ export function createApi(db, cfg) {
                              order by committed_at desc limit 10`, [like, like, like])) {
       results.push({ type: 'commit', id: r.sha, title: r.subject, subtitle: r.short_sha,
                      href: `/commits/${r.sha}` })
+    }
+    const ql = q.toLowerCase()
+    for (const f of readState(cfg).features.filter((f) => f?.id &&
+      `${f.id} ${f.title ?? ''}`.toLowerCase().includes(ql)).slice(0, 10)) {
+      results.push({ type: 'feature', id: f.id, title: `${f.id} — ${f.title ?? ''}`, badge: f.status ?? 'planned',
+                     href: `/features/${f.id}` })
     }
     for (const r of all(db, `select path, purpose from layout where path like ? or purpose like ? limit 5`,
                         [like, like])) {

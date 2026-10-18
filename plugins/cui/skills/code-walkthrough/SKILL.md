@@ -32,6 +32,12 @@ function is called *by* is a walkthrough of a fragment. Check `.cui/blueprint.ya
 boundary rules the change is operating under, and `.cui/product-functions.yaml` for the
 milestone it serves.
 
+If the commit has `Feature:` trailers, read those features' entries in `.cui/features.yaml`
+and their `.cui/tdd/<id>.json` at that commit (`git show <sha>:.cui/tdd/FR-X.json`). The
+walkthrough should say which tests pin the behaviour down, what each one failed with before
+the change, and whether any plan case is still uncovered — the reader's question is usually
+"how do I know this keeps working?"
+
 ## Structure
 
 ````markdown

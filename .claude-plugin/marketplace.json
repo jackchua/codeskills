@@ -12,7 +12,7 @@
     {
       "name": "cui",
       "source": "./plugins/cui",
-      "description": "Product-Function milestones, locked repo blueprints, and a Central UI that tracks every commit with coverage, demos and generated walkthroughs."
+      "description": "Product-Function milestones, locked repo blueprints, a CI-enforced feature registry with test-first (red \u2192 green) evidence and an approvals ratchet, and a Central UI that tracks every commit."
     }
   ]
 }

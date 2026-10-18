@@ -122,7 +122,8 @@ node cui/bin/cui.mjs status        # prints current milestone progress
 
 Tell the user, in three lines:
 - the milestone list is written and synced
-- the next step is `/cui:blueprint` (repo structure must be locked before code)
+- the next step is `/cui:blueprint` (repo structure must be locked before code), then
+  `/cui:features` (every acceptance criterion becomes registered, tested features)
 - `npm run cui` (or `npm --prefix cui start`) opens the CUI if they want to see it
 
 Do not start implementing. `/cui:blueprint` is next.

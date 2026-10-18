@@ -1,20 +1,32 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { extname, join } from 'node:path'
 import * as G from './git.mjs'
-import { loadCoverage, projectTotals, diffTotals, pct } from './coverage.mjs'
+import { loadCoverage, projectTotals, diffTotals, pct, matchesAny } from './coverage.mjs'
 import { run, get, all } from './db.mjs'
+import { check } from './registry.mjs'
+import { verifiedAt } from './tdd.mjs'
 
 const IMPACTS = new Set(['enabled', 'progress', 'groundwork', 'none'])
+const FEATURE_KINDS = new Map([
+  ['red→green', 'red-green'], ['red->green', 'red-green'], ['red-green', 'red-green'],
+  ['extended', 'extended'], ['fix', 'fix'], ['refactor', 'refactor'],
+])
 
 /**
  * Parses the trailers ship-commit writes:
  *   PF: PF-2 progress (PF-2.1, PF-2.3 met)
  *   Coverage: project 78.4% (+1.2), diff 91.3%
  *   Demo: demos/a1b2c3d/ - 500 synthetic orders, realism checks pass
+ *   Demo: waived                    (the user shipped without a demo, on purpose)
  *   Blueprint: added src/workers (PF-4 needs a queue consumer)
+ *   Feature: FR-MAIL-012 red→green (3 red, 3 passing)
+ *   Test-Change: split the oversized-attachment test in two; same assertions
  */
 export function parseTrailers(message) {
-  const out = { milestones: [], coverage: null, demo: null, blueprint: null, tests: null, found: false }
+  const out = {
+    milestones: [], coverage: null, demo: null, blueprint: null, tests: null,
+    features: [], testChange: null, found: false,
+  }
 
   for (const raw of (message ?? '').split('\n')) {
     const line = raw.trim()
@@ -51,7 +63,10 @@ export function parseTrailers(message) {
       out.found = true
       const value = m[1].trim()
       const skipped = value.match(/^skipp?ed\s*[-–—:]\s*(.+)$/i)
-      if (skipped) out.demo = { status: 'skipped', required: false, reason: skipped[1].trim() }
+      // waived: the user chose to ship without a demo. No reason required — it's their call.
+      const waived = value.match(/^waived\b\s*(?:[-–—:]\s*(.*))?$/i)
+      if (waived) out.demo = { status: 'waived', required: false, reason: waived[1]?.trim() || null }
+      else if (skipped) out.demo = { status: 'skipped', required: false, reason: skipped[1].trim() }
       else {
         const parts = value.split(/\s+[-–—]\s+/)
         out.demo = { status: 'present', required: true, dir: parts[0].replace(/\/$/, ''), claim: parts[1] ?? null }
@@ -64,6 +79,25 @@ export function parseTrailers(message) {
 
     m = line.match(/^Tests:\s*(\w+)/i)
     if (m) { out.found = true; out.tests = m[1].toLowerCase(); continue }
+
+    m = line.match(/^Feature:\s*(.+)$/i)
+    if (m) {
+      out.found = true
+      const value = m[1].trim()
+      if (/^none\b/i.test(value)) continue
+      const parsed = value.match(/^(FR-[A-Z0-9-]+)\s+(\S+)\s*(.*)$/)
+      if (parsed) {
+        const kind = FEATURE_KINDS.get(parsed[2].toLowerCase()) ?? 'other'
+        out.features.push({ id: parsed[1], kind, note: parsed[3].replace(/^[-–—:]\s*/, '') || null })
+      } else {
+        const id = value.match(/FR-[A-Z0-9-]+/)?.[0]
+        if (id) out.features.push({ id, kind: 'other', note: value })
+      }
+      continue
+    }
+
+    m = line.match(/^Test-Change:\s*(.+)$/i)
+    if (m) { out.found = true; out.testChange = m[1].trim(); continue }
   }
 
   return out
@@ -106,7 +140,7 @@ export function scanDemoDir(root, dir) {
 }
 
 /** Records one commit — stats, coverage, demo and milestone scoring — into the CUI. */
-export function ingestCommit(db, cfg, ref = 'HEAD', { coverageFile = null } = {}) {
+export function ingestCommit(db, cfg, ref = 'HEAD', { coverageFile = null, recordResults = true } = {}) {
   const root = cfg.root
   const sha = G.resolveSha(root, ref)
   const meta = G.commitMeta(root, sha)
@@ -116,19 +150,54 @@ export function ingestCommit(db, cfg, ref = 'HEAD', { coverageFile = null } = {}
   const insertions = files.reduce((a, f) => a + f.insertions, 0)
   const deletions = files.reduce((a, f) => a + f.deletions, 0)
 
+  // Lines taken out of existing tests are how a test gets weakened until it passes.
+  // That is sometimes right, but it must be said out loud in a Test-Change: trailer.
+  const testEdits = files.filter((f) => f.change !== 'A' && f.deletions > 0 && matchesAny(f.path, cfg.test_globs ?? []))
+  const testChange = !testEdits.length ? null : trailers.testChange ? 'explained' : 'unexplained'
+
   run(db, `insert into commits(sha, short_sha, subject, body, author_name, author_email,
              committed_at, branch, parent_sha, files_changed, insertions, deletions,
-             tests_status, blueprint_note, unparsed, ingested_at)
-           values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             tests_status, blueprint_note, unparsed, test_change, test_change_reason, ingested_at)
+           values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            on conflict(sha) do update set
              subject=excluded.subject, body=excluded.body, branch=excluded.branch,
              files_changed=excluded.files_changed, insertions=excluded.insertions,
              deletions=excluded.deletions, tests_status=excluded.tests_status,
              blueprint_note=excluded.blueprint_note, unparsed=excluded.unparsed,
+             test_change=excluded.test_change, test_change_reason=excluded.test_change_reason,
              ingested_at=excluded.ingested_at`,
     [sha, meta.short_sha, meta.subject, meta.body, meta.author_name, meta.author_email,
      meta.committed_at, G.currentBranch(root), meta.parent_sha, files.length, insertions, deletions,
-     trailers.tests ?? 'unknown', trailers.blueprint, trailers.found ? 0 : 1, new Date().toISOString()])
+     trailers.tests ?? 'unknown', trailers.blueprint, trailers.found ? 0 : 1,
+     testChange, trailers.testChange, new Date().toISOString()])
+
+  // ---- features
+  run(db, `delete from commit_features where sha = ?`, [sha])
+  for (const f of trailers.features) {
+    // red→green is a claim; the cycle file committed alongside is the evidence.
+    const verified = f.kind === 'red-green' ? verifiedAt(cfg, f.id, sha) : false
+    run(db, `insert into commit_features(sha, feature_id, kind, note, verified) values(?,?,?,?,?)
+             on conflict(sha, feature_id) do update set kind=excluded.kind, note=excluded.note, verified=excluded.verified`,
+      [sha, f.id, f.kind, f.note, verified])
+  }
+
+  // Test results on disk describe the working tree, so they only belong to HEAD.
+  let registryResult = null
+  if (recordResults && sha === G.resolveSha(root, 'HEAD')) {
+    try {
+      const r = check(cfg)
+      if (r.result_files.length) {
+        run(db, `delete from feature_results where sha = ?`, [sha])
+        for (const f of r.features) {
+          run(db, `insert into feature_results(sha, feature_id, state, passing, failing) values(?,?,?,?,?)`,
+            [sha, f.id, f.state, f.passing, f.failing])
+        }
+        registryResult = { ok: r.ok, summary: r.summary, errors: r.errors.length }
+      }
+    } catch (err) {
+      registryResult = { error: err.message }
+    }
+  }
 
   run(db, `delete from commit_files where sha = ?`, [sha])
   for (const f of files) {
@@ -214,10 +283,10 @@ export function ingestCommit(db, cfg, ref = 'HEAD', { coverageFile = null } = {}
                artifacts=excluded.artifacts, registered_at=excluded.registered_at`,
       [sha, 1, 'present', null, dir, scan.title ?? trailers.demo?.claim ?? null,
        scan.claim ?? trailers.demo?.claim ?? null, scan.artifacts, new Date().toISOString()])
-  } else if (trailers.demo?.status === 'skipped') {
+  } else if (trailers.demo?.status === 'skipped' || trailers.demo?.status === 'waived') {
     run(db, `insert into demos(sha, required, status, reason, registered_at) values(?,?,?,?,?)
-             on conflict(sha) do update set required=0, status='skipped', reason=excluded.reason`,
-      [sha, 0, 'skipped', trailers.demo.reason, new Date().toISOString()])
+             on conflict(sha) do update set required=0, status=excluded.status, reason=excluded.reason`,
+      [sha, 0, trailers.demo.status, trailers.demo.reason, new Date().toISOString()])
   } else {
     // Nothing said, nothing found. Guess whether one was owed so the CUI can nag.
     const required = looksLikeItNeedsADemo(files, trailers)
@@ -232,6 +301,7 @@ export function ingestCommit(db, cfg, ref = 'HEAD', { coverageFile = null } = {}
   return {
     sha, short_sha: meta.short_sha, subject: meta.subject,
     milestones: trailers.milestones, unknownKeys, coverage: coverageResult,
+    features: trailers.features, testChange, registry: registryResult,
     demo: dir ? { dir, artifacts: scan.artifacts.length } : trailers.demo ?? { status: 'missing' },
     unparsed: !trailers.found,
   }
@@ -253,7 +323,7 @@ function looksLikeItNeedsADemo(files, trailers) {
 export function backfill(db, cfg, { limit = 200 } = {}) {
   const results = []
   for (const sha of G.listCommits(cfg.root, { limit }).reverse()) {
-    try { results.push(ingestCommit(db, cfg, sha)) }
+    try { results.push(ingestCommit(db, cfg, sha, { recordResults: false })) }
     catch (err) { results.push({ sha, error: err.message }) }
   }
   return results

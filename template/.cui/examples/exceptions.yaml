@@ -1,0 +1,29 @@
+# The exceptions registry: features verified some other way than an automated test.
+# Every entry says why, how it is verified instead, who owns it, and when it expires.
+# An expired or unapproved exception fails `cui registry check`.
+#
+# Claude writes entries as status: proposed. Only you approve them:
+#   cui approve EX-1        (or the Approvals page in the CUI)
+#
+# category: manual | visual | third-party | perf | flaky | other
+# test:     optional — for flaky: quarantines only tests whose name contains this text
+version: 1
+exceptions:
+  - id: EX-1
+    feature: FR-DOCS-004
+    category: visual
+    reason: "Print output is pixels; there is no visual-regression harness yet (planned in PF-4)."
+    verification: "docs/checklists/print-preview.md, run before each release; last run recorded in the release notes"
+    owner: jack
+    expires: "2026-12-31"
+    status: approved
+
+  - id: EX-2
+    feature: FR-MAIL-001
+    category: flaky
+    test: "recipient sees it without reloading"
+    reason: "The websocket push races the e2e harness's first poll about 1 run in 30."
+    verification: "Passes in the nightly run with retries; fix tracked in FR-MAIL-001's next cycle"
+    owner: jack
+    expires: "2026-11-15"
+    status: proposed
