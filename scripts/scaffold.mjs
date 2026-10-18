@@ -67,9 +67,23 @@ for (const doc of ['CUI.md']) {
   }
 }
 
+// 3b. CI ----------------------------------------------------------------------
+// The registry is only enforced if something outside this machine checks it.
+for (const [from, to] of [
+  ['ci/cui.yml', '.github/workflows/cui.yml'],
+  ['ci/cui-nightly.yml', '.github/workflows/cui-nightly.yml'],
+  ['ci/CODEOWNERS', '.github/CODEOWNERS'],
+]) {
+  const dest = join(target, to)
+  if (existsSync(dest) && !force) { warn(`${to} exists, left alone`); continue }
+  mkdirSync(dirname(dest), { recursive: true })
+  cpSync(join(TEMPLATE, from), dest)
+  ok(`wrote ${to}`)
+}
+
 // 4. gitignore ----------------------------------------------------------------
 const giPath = join(target, '.gitignore')
-const want = ['cui/node_modules/', 'cui/dist/', '.cui/cui.db', '.cui/cui.db-wal', '.cui/cui.db-shm']
+const want = ['cui/node_modules/', 'cui/dist/', '.cui/cui.db', '.cui/cui.db-wal', '.cui/cui.db-shm', 'test-results/']
 const existing = existsSync(giPath) ? readFileSync(giPath, 'utf8') : ''
 const missing = want.filter((l) => !existing.split('\n').some((e) => e.trim() === l))
 if (missing.length) {
@@ -159,10 +173,18 @@ ${C.b('Done.')} What happens next, in order:
      ${C.dim('Until both are done, a PreToolUse hook blocks implementation writes.')}
      ${C.dim('That is the point — it is what stops the codebase getting away from you.')}
 
-  ${C.c('3.')} Build, and commit with ${C.c('/cui:ship')}
-     Tests, coverage, a demo decision and milestone scoring happen as part of committing.
+  ${C.c('3.')} Run ${C.c('/cui:features')}
+     Builds the feature registry: every feature gets an ID and a test plan. Set
+     ${C.c('test_command')} in .cui/config.yaml to a command that writes JUnit XML.
 
-  ${C.c('4.')} Open the dashboard
+  ${C.c('4.')} Build each feature test-first with ${C.c('/cui:tdd FR-…')}, commit with ${C.c('/cui:ship')}
+     Red, green, full suite, coverage, a demo decision and milestone scoring.
+
+  ${C.c('5.')} Push to GitHub and protect main
+     Make the ${C.c('cui')} workflow a required check, turn on "Require review from Code Owners",
+     and replace @OWNER in .github/CODEOWNERS with your handle.
+
+  ${C.c('6.')} Open the dashboard
      ${C.dim(existsSync(pkgPath) ? 'npm run cui' : 'node cui/bin/cui.mjs serve')}   →  http://localhost:4317
 
 ${C.dim('Shape references for the .cui/*.yaml files are in .cui/examples/.')}

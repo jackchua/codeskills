@@ -46,6 +46,54 @@ milestones:
   api = createApi(db, cfg)
 })
 
+describe('the registry and approvals endpoints', () => {
+  test('GET /registry reports features, exceptions and the check result', async () => {
+    writeFileSync(join(root, '.cui/features.yaml'), `version: 1
+features:
+  - id: FR-CALC-001
+    title: "add"
+    milestone: PF-1
+    status: active
+    test_plan:
+      - level: unit
+        case: "1 + 1 = 2"
+`)
+    writeFileSync(join(root, '.cui/exceptions.yaml'), `version: 1
+exceptions:
+  - id: EX-1
+    feature: FR-CALC-001
+    category: manual
+    reason: "no runner yet"
+    verification: "checked by hand"
+    expires: "2999-01-01"
+    status: proposed
+`)
+    const body = await (await api.request('/registry')).json()
+    assert.equal(body.ok, false)
+    assert.equal(body.features[0].state, 'untested')
+    assert.equal(body.exceptions[0].status, 'proposed')
+    assert.ok(body.errors.some((e) => e.rule === 'approval'))
+  })
+
+  test('POST /approvals/:id approves an exception and logs it', async () => {
+    const pending = await (await api.request('/approvals')).json()
+    assert.deepEqual(pending.exceptions.map((e) => e.id), ['EX-1'])
+
+    const res = await api.request('/approvals/EX-1', { method: 'POST', body: JSON.stringify({ decision: 'approve', note: 'fine for now' }) })
+    assert.equal(res.status, 200)
+    const after = await (await api.request('/registry')).json()
+    assert.equal(after.features[0].state, 'excepted')
+    const { log } = await (await api.request('/approvals')).json()
+    assert.equal(log[0].subject, 'EX-1')
+    assert.equal(log[0].note, 'fine for now')
+  })
+
+  test('approving something that does not exist is a 400, not a crash', async () => {
+    const res = await api.request('/approvals/EX-404', { method: 'POST', body: '{}' })
+    assert.equal(res.status, 400)
+  })
+})
+
 after(() => {
   closeDb()
   rmSync(root, { recursive: true, force: true })

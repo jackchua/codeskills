@@ -10,6 +10,9 @@ import { Commits } from './pages/Commits'
 import { CommitDetail } from './pages/CommitDetail'
 import { Structure } from './pages/Structure'
 import { Commands } from './pages/Commands'
+import { Features } from './pages/Features'
+import { FeatureDetail } from './pages/FeatureDetail'
+import { Approvals } from './pages/Approvals'
 
 export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -18,6 +21,7 @@ export default function App() {
 
   const { data } = useAsync(() => api.overview(), [])
   const h = data?.health
+  const reg = data?.registry
 
   return (
     <div className="shell">
@@ -33,6 +37,18 @@ export default function App() {
         <NavLink to="/milestones" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           Milestones
           <span className="count">{h ? `${h.milestones_done}/${h.milestones_total}` : ''}</span>
+        </NavLink>
+        <NavLink to="/features" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          Features
+          <span className="count" style={reg && !reg.ok && reg.summary ? { color: 'var(--red)' } : undefined}>
+            {reg?.summary?.total ? (reg.ok ? `${reg.summary.passing}/${reg.summary.total - reg.summary.retired}` : '✗') : ''}
+          </span>
+        </NavLink>
+        <NavLink to="/approvals" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
+          Approvals
+          <span className="count" style={h?.approvals_pending ? { color: 'var(--yellow)' } : undefined}>
+            {h?.approvals_pending || ''}
+          </span>
         </NavLink>
         <NavLink to="/commits" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}>
           Commits <span className="count">{h?.commits_total ?? ''}</span>
@@ -62,6 +78,9 @@ export default function App() {
           <Route path="/" element={<Overview />} />
           <Route path="/milestones" element={<Milestones />} />
           <Route path="/milestones/:key" element={<MilestoneDetail />} />
+          <Route path="/features" element={<Features />} />
+          <Route path="/features/:id" element={<FeatureDetail />} />
+          <Route path="/approvals" element={<Approvals />} />
           <Route path="/commits" element={<Commits />} />
           <Route path="/commits/:sha" element={<CommitDetail />} />
           <Route path="/structure" element={<Structure />} />

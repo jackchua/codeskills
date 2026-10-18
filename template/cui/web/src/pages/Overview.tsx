@@ -7,7 +7,8 @@ export function Overview() {
   const { data, error, loading } = useAsync(() => api.overview(), [])
   if (loading) return <Spinner />
   if (error) return <ErrorBox error={error} />
-  const { meta, milestones, commits, trend, health } = data
+  const { meta, milestones, commits, trend, health, registry } = data
+  const rs = registry?.summary
 
   const latest = trend.length ? trend[trend.length - 1] : null
   const active = milestones.filter((m: any) => m.status !== 'dropped')
@@ -31,6 +32,35 @@ export function Overview() {
         <div className="banner warn">
           <b>No Product Function milestones defined.</b> Nothing can be scored until they exist.
           Run <code>/pf</code>.
+        </div>
+      )}
+      {health.approvals_pending > 0 && (
+        <div className="banner warn">
+          <b>{health.approvals_pending} item(s) are waiting on your approval</b> — proposed changes to the
+          blueprint or registry, or exceptions. <Link to="/approvals">Review them →</Link>
+        </div>
+      )}
+      {registry && !registry.ok && rs && (
+        <div className="banner bad">
+          <b>The feature registry check fails</b> ({registry.errors} error(s)) — CI will reject this tree.{' '}
+          <Link to="/features">See which features →</Link>
+        </div>
+      )}
+      {rs && rs.total === 0 && health.blueprint_locked && (
+        <div className="banner warn">
+          <b>No feature registry.</b> Run <code>/cui:features</code> so every feature gets an ID and a test plan.
+        </div>
+      )}
+      {rs?.exceptions_expiring > 0 && (
+        <div className="banner warn">
+          <b>{rs.exceptions_expiring} exception(s) expire soon.</b> Test those features, or renew the exceptions
+          before CI starts failing. <Link to="/features">See the exceptions registry →</Link>
+        </div>
+      )}
+      {health.unexplained_test_changes > 0 && (
+        <div className="banner warn">
+          {health.unexplained_test_changes} commit(s) removed lines from existing tests without a{' '}
+          <code>Test-Change:</code> trailer saying why. <Link to="/commits">Check the commits →</Link>
         </div>
       )}
       {health.unparsed_commits > 0 && (
@@ -57,7 +87,12 @@ export function Overview() {
           value={latest?.project_pct != null ? `${latest.project_pct}%` : '—'}
           sub={latest ? `as of ${latest.short_sha}` : 'no measurement yet'}
         />
-        <Stat label="Commits" value={health.commits_total} sub={`${health.walkthroughs_ready} with walkthroughs`} />
+        <Stat
+          label="Features"
+          value={rs?.total ? `${rs.passing}/${rs.total - rs.retired - rs.planned}` : '—'}
+          tone={rs?.total ? (registry.ok ? 'green' : 'red') : undefined}
+          sub={rs?.total ? `${rs.planned} planned · ${rs.excepted} excepted` : 'no registry yet'}
+        />
         <Stat
           label="Demos owed"
           value={health.demos_owed}
@@ -104,6 +139,7 @@ export function Overview() {
                 <span className="subject">{c.subject}</span>
                 <span className="row" style={{ gap: 8, flex: 'none' }}>
                   {c.demo_status === 'present' && <Badge tone="green">demo</Badge>}
+                  {c.demo_status === 'waived' && <Badge>demo waived</Badge>}
                   {c.demo_status === 'missing' && c.demo_required === 1 && <Badge tone="yellow">no demo</Badge>}
                   {c.walkthrough_status === 'ready' && <Badge tone="purple">walkthrough</Badge>}
                   <CoverageBar pct={c.diff_pct} label="diff" />

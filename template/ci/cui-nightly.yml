@@ -1,0 +1,61 @@
+# Installed by the CUI scaffolder. Every night: mutation-tests every high-risk feature and
+# looks for exceptions that are expiring, expired or still unapproved. When something needs
+# attention it opens (or updates) a single issue labelled "cui-nightly", and closes it again
+# once everything is clean.
+name: cui nightly
+
+on:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install the CUI
+        run: npm ci --prefix cui --no-audit --no-fund
+
+      # Replace with your project's own setup (npm ci, pip install, go mod download, …).
+      - name: Install project dependencies
+        if: hashFiles('package-lock.json') != ''
+        run: npm ci --no-audit --no-fund
+
+      - name: Tests
+        continue-on-error: true
+        run: node cui/bin/cui.mjs test
+
+      - name: Nightly report
+        id: report
+        run: |
+          node cui/bin/cui.mjs nightly --markdown nightly.md
+          cat nightly.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update the issue
+        if: steps.report.outputs.findings == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create cui-nightly --color d29922 --description "CUI nightly findings" 2>/dev/null || true
+          n=$(gh issue list --label cui-nightly --state open --json number --jq '.[0].number')
+          if [ -n "$n" ]; then gh issue edit "$n" --body-file nightly.md
+          else gh issue create --title "CUI nightly: attention needed" --label cui-nightly --body-file nightly.md; fi
+
+      - name: Close the issue when clean
+        if: steps.report.outputs.findings == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for n in $(gh issue list --label cui-nightly --state open --json number --jq '.[].number'); do
+            gh issue close "$n" --comment "Clean as of $(date -u +%F)."
+          done

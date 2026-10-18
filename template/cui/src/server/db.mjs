@@ -40,6 +40,8 @@ create table if not exists commits (
   tests_status text default 'unknown',
   blueprint_note text,
   unparsed integer default 0,
+  test_change text,
+  test_change_reason text,
   ingested_at text
 );
 
@@ -155,6 +157,24 @@ create table if not exists commands (
   position integer
 );
 
+create table if not exists commit_features (
+  sha text not null,
+  feature_id text not null,
+  kind text not null,
+  note text,
+  verified integer default 0,
+  primary key (sha, feature_id)
+);
+
+create table if not exists feature_results (
+  sha text not null,
+  feature_id text not null,
+  state text,
+  passing integer default 0,
+  failing integer default 0,
+  primary key (sha, feature_id)
+);
+
 create table if not exists meta (
   key text primary key,
   value text
@@ -164,6 +184,7 @@ create index if not exists idx_commits_time on commits(committed_at desc);
 create index if not exists idx_cm_milestone on commit_milestones(milestone_key);
 create index if not exists idx_questions_sha on questions(sha);
 create index if not exists idx_filecov_sha on file_coverage(sha);
+create index if not exists idx_cf_feature on commit_features(feature_id);
 `
 
 let handle = null
@@ -172,7 +193,21 @@ export function openDb(cfg) {
   if (handle) return handle
   handle = new DatabaseSync(cfg.dbPath)
   handle.exec(SCHEMA)
+  migrate(handle)
   return handle
+}
+
+// Columns added after a database may already exist. `create table if not exists` won't add them.
+const COLUMNS = [
+  ['commits', 'test_change', 'text'],
+  ['commits', 'test_change_reason', 'text'],
+]
+
+function migrate(db) {
+  for (const [table, column, type] of COLUMNS) {
+    const has = db.prepare(`select 1 from pragma_table_info(?) where name = ?`).get(table, column)
+    if (!has) db.exec(`alter table ${table} add column ${column} ${type}`)
+  }
 }
 
 export function closeDb() {

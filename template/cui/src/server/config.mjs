@@ -6,6 +6,18 @@ const DEFAULTS = {
   port: 4317,
   test_command: null,
   coverage_command: null,
+  // Runs one feature's tests; {id} is replaced with the feature ID. Falls back to test_command.
+  feature_test_command: null,
+  // JUnit XML the test command writes. The feature registry reads test results from here.
+  test_results: ['test-results/**/*.xml', 'junit.xml', 'reports/junit*.xml'],
+  // Files that count as tests when deciding whether a commit changed existing tests.
+  // Mutation testing for risk: high features. {files} is replaced with their source globs.
+  mutation_command: null,
+  mutation_report: 'reports/mutation/mutation.json',
+  mutation_threshold: 60,
+  // Approved exceptions expiring within this many days are called out (status, nightly, CUI).
+  exception_warning_days: 14,
+  test_globs: ['**/*.test.*', '**/*.spec.*', '**/test/**', '**/tests/**', '**/__tests__/**', '**/e2e/**'],
   coverage_files: [
     'coverage/lcov.info',
     'lcov.info',

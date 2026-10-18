@@ -11,6 +11,9 @@ sceptical person would ask for.
 
 The bar: **could someone who doesn't trust you look at this and believe the feature works?**
 
+If the user has said to ship this commit without a demo, this skill doesn't run:
+`ship-commit` records `Demo: waived`. Don't re-litigate it.
+
 ## Step 1 — Decide if a demo is required
 
 Work through this in order. Stop at the first match.

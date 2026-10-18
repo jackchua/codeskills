@@ -1,6 +1,6 @@
 ---
 description: Test, cover, demo, score against milestones, and commit
-argument-hint: "[optional note about what this change is]"
+argument-hint: "[no-demo] [optional note about what this change is]"
 ---
 
 Use the `ship-commit` skill. It will invoke `commit-demo` for the demo decision.
@@ -16,5 +16,6 @@ Change size:
 Milestones to score against:
 !`node cui/bin/cui.mjs status --brief 2>/dev/null || cat .cui/product-functions.yaml 2>/dev/null | grep -E '^\s+(key|title|status):' || echo "(no milestones — run /cui:pf)"`
 
-Work through every step of the skill in order. Do not skip coverage, and do not skip the
-demo decision even if the answer is no.
+Work through every step of the skill in order. Do not skip coverage or the registry check.
+If my note includes `no-demo`, the demo is waived (`Demo: waived`): skip the demo step
+without asking for a reason. Otherwise do not skip the demo decision even if the answer is no.

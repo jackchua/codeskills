@@ -44,6 +44,7 @@ export function Commits() {
                   {c.unparsed === 1 && <Badge tone="yellow">unscored</Badge>}
                   {c.tests_status === 'failing' && <Badge tone="red">tests failing</Badge>}
                   {c.demo_status === 'present' && <Badge tone="green">demo</Badge>}
+                  {c.demo_status === 'waived' && <Badge>demo waived</Badge>}
                   {c.demo_status === 'missing' && c.demo_required === 1 && <Badge tone="yellow">demo owed</Badge>}
                   {c.walkthrough_status === 'ready' && <Badge tone="purple">walkthrough</Badge>}
                 </span>

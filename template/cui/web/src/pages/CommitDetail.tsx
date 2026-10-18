@@ -18,7 +18,7 @@ export function CommitDetail() {
 
   if (loading) return <Spinner />
   if (error) return <ErrorBox error={error} />
-  const { commit, files, coverage, previous_coverage, milestones, demo, walkthrough, question_count } = data
+  const { commit, files, coverage, previous_coverage, milestones, demo, walkthrough, question_count, features } = data
 
   const delta = coverage?.project_pct != null && previous_coverage?.project_pct != null
     ? Math.round((coverage.project_pct - previous_coverage.project_pct) * 10) / 10
@@ -101,6 +101,14 @@ export function CommitDetail() {
                       onClick={() => setTab('demo')}>view the evidence →</button>
             </>
           )}
+          {demo?.status === 'waived' && (
+            <>
+              <Badge>demo waived</Badge>
+              <div className="small dim" style={{ marginTop: 6 }}>
+                Shipped without a demo by choice{demo.reason ? ` — ${demo.reason}` : '.'}
+              </div>
+            </>
+          )}
           {demo?.status === 'skipped' && (
             <>
               <Badge>no demo</Badge>
@@ -117,6 +125,33 @@ export function CommitDetail() {
           )}
         </div>
       </div>
+
+      {features?.length > 0 && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <h2>Features</h2>
+          <div className="row wrap" style={{ gap: 14 }}>
+            {features.map((f: any) => (
+              <span key={f.feature_id} className="row" style={{ gap: 6 }}>
+                <Link to={`/features/${f.feature_id}`} className="mono small">{f.feature_id}</Link>
+                <Badge tone={f.kind === 'red-green' ? (f.verified ? 'green' : 'yellow') : ''}>
+                  {f.kind === 'red-green' ? (f.verified ? 'red → green, verified' : 'red → green, no cycle recorded') : f.kind}
+                </Badge>
+                {f.note && <span className="small faint">{f.note}</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {commit.test_change === 'unexplained' && (
+        <div className="banner warn">
+          <b>This commit removed lines from existing tests</b> and has no <code>Test-Change:</code> trailer saying why.
+          Check the test files in the Changes tab — this is how tests get weakened until they pass.
+        </div>
+      )}
+      {commit.test_change === 'explained' && (
+        <div className="banner"><b>Test change:</b> {commit.test_change_reason}</div>
+      )}
 
       {commit.blueprint_note && commit.blueprint_note !== 'unchanged' && (
         <div className="banner warn">
@@ -269,6 +304,17 @@ function DemoView({ demo }: any) {
           ? 'This commit changed behaviour but no demo was attached. Run `cui demo register --dir demos/…`, or record why one is not needed.'
           : 'No demo for this commit, and none was owed.'}
       </Empty>
+    )
+  }
+  if (demo.status === 'waived') {
+    return (
+      <div className="card">
+        <h2>No demo — waived</h2>
+        <p style={{ margin: 0 }}>
+          You chose to ship this commit without a demo{demo.reason ? `: ${demo.reason}` : '.'} Its tests are
+          the only evidence it works.
+        </p>
+      </div>
     )
   }
   if (demo.status === 'skipped') {

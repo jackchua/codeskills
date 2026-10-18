@@ -1,0 +1,50 @@
+# The feature registry. Every feature or requirement gets an ID and a test plan.
+# Tests carry the ID in their name — test('[FR-MAIL-001] lands in Sent and Inbox', …) —
+# and `cui registry check` fails when an active feature has no passing tagged test.
+#
+# status:  planned  registered, not built yet; needs no tests
+#          active   built; must have ≥1 passing tagged test (or an approved exception)
+#          retired  kept for history; only via an approved proposal
+#
+# Claude may add features, add test-plan cases, and promote planned → active.
+# Removing, retiring, demoting or shrinking a plan is a proposal you approve — and so is
+# lowering risk, lowering a mutation_threshold, or removing a source glob.
+version: 1
+features:
+  - id: FR-MAIL-001
+    title: "A user can send a plain-text message to another user"
+    milestone: PF-1
+    criteria: [PF-1.1]
+    status: active
+    risk: high            # high: touches data integrity, auth or money — test at more than one level
+    source:               # high risk: the files it owns, mutation-tested against its tests
+      - "src/mail/send/**"
+    mutation_threshold: 70  # optional; defaults to mutation_threshold in config.yaml
+    test_plan:
+      - level: integration
+        case: "message is stored once, visible in the sender's Sent and the recipient's Inbox"
+      - level: integration
+        case: "sending to an unknown address fails with a 4xx and stores nothing"
+      - level: e2e
+        case: "compose → send → recipient sees it without reloading"
+
+  - id: FR-MAIL-002
+    title: "Attachments up to 25 MB"
+    milestone: PF-1
+    criteria: [PF-1.2]
+    status: planned
+    test_plan:
+      - level: unit
+        case: "a 25 MB file is accepted; 25 MB + 1 byte is rejected with a clear message"
+      - level: integration
+        case: "attachment bytes round-trip unchanged (sha256 equal)"
+
+  - id: FR-DOCS-004
+    title: "Print preview matches the document"
+    milestone: PF-2
+    criteria: [PF-2.3]
+    status: active
+    test_plan:
+      - level: manual
+        case: "print preview of the fixture corpus checked against the reference PDFs"
+    notes: "Covered by EX-1 until the visual-regression harness exists."

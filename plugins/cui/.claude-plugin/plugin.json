@@ -1,11 +1,20 @@
 {
   "name": "cui",
-  "version": "1.0.0",
-  "description": "Keeps AI-written codebases understandable: PF milestones before code, a locked repo blueprint, and a Central UI tracking commits, coverage, demos and walkthroughs.",
+  "version": "1.1.0",
+  "description": "Keeps AI-written codebases understandable and unbroken: PF milestones before code, a locked repo blueprint, a feature registry enforced in CI with test-first evidence, human-only approvals for dropping obligations, and a Central UI tracking every commit.",
   "author": {
     "name": "Jack",
     "email": "jack@nigiriventures.com"
   },
-  "keywords": ["milestones", "architecture", "coverage", "walkthrough", "dashboard"],
+  "keywords": [
+    "architecture",
+    "ci",
+    "coverage",
+    "dashboard",
+    "feature-registry",
+    "milestones",
+    "tdd",
+    "walkthrough"
+  ],
   "hooks": "./hooks/hooks.json"
 }

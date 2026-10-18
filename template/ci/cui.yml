@@ -1,0 +1,62 @@
+# Installed by the CUI scaffolder. Enforces, on every pull request and every push to main:
+#   - the full test suite passes
+#   - every active feature in .cui/features.yaml has a passing test tagged with its ID
+#   - no feature, test, exception approval or locked-blueprint change was dropped or added
+#     since the base without a matching entry in .cui/approvals.log
+#   - high-risk features this change touches still meet their mutation threshold
+#
+# Make this a required status check in branch protection, or nothing stops a merge.
+# Claude Code cannot edit this file (the cui plugin's gate refuses); change it yourself.
+name: cui
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the ratchet reads .cui/ as it stood at the base
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install the CUI
+        run: npm ci --prefix cui --no-audit --no-fund
+
+      # Replace with your project's own setup (npm ci, pip install, go mod download, …).
+      - name: Install project dependencies
+        if: hashFiles('package-lock.json') != ''
+        run: npm ci --no-audit --no-fund
+
+      - name: Tests (test_command must write JUnit XML into test_results)
+        id: tests
+        run: node cui/bin/cui.mjs test
+
+      # Runs even when tests fail, so the report says which features broke.
+      - name: Feature registry, ratchet and gates
+        if: always()
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: node cui/bin/cui.mjs ci --base "$BASE"
+
+      # Mutation-tests only the risk: high features whose source this change touches.
+      # No-op unless mutation_command is set in .cui/config.yaml.
+      - name: Mutation testing (touched high-risk features)
+        if: steps.tests.outcome == 'success'
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: node cui/bin/cui.mjs mutation --base "$BASE"
+
+      - name: Keep the test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          if-no-files-found: ignore

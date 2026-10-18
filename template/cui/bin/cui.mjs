@@ -10,6 +10,12 @@ import { startServer } from '../src/server/index.mjs'
 import * as G from '../src/server/git.mjs'
 import { loadCoverage, projectTotals, diffTotals, findCoverageFile } from '../src/server/coverage.mjs'
 import { claudeAvailable } from '../src/server/claude.mjs'
+import { check, recordBaseline, readState, describeItem, ensureResultDirs } from '../src/server/registry.mjs'
+import { approve, reject, pendingApprovals, createProposal, acceptRatchet } from '../src/server/approvals.mjs'
+import * as TDD from '../src/server/tdd.mjs'
+import { runMutation, changedFeatures, needsMutation } from '../src/server/mutation.mjs'
+import { daysBetween, exceptionInForce } from '../src/server/registry.mjs'
+import { appendFileSync } from 'node:fs'
 
 // ------------------------------------------------------------------ plumbing
 
@@ -68,8 +74,14 @@ cui.db-shm
   write('config.yaml', `# CUI configuration
 enforce: true            # gate implementation writes on milestones + locked blueprint
 port: 4317
-test_command: null       # e.g. "npm test"
+test_command: null       # e.g. "npm test" — must write JUnit XML to one of test_results
 coverage_command: null   # e.g. "npm test -- --coverage"
+feature_test_command: null  # one feature's tests, {id} substituted, e.g. "npx vitest run -t '\\[{id}\\]'"
+test_results:            # JUnit XML the feature registry reads
+  - "test-results/**/*.xml"
+mutation_command: null   # risk: high features, {files} = their source globs, e.g. "npx stryker run --mutate {files}"
+mutation_threshold: 60   # minimum mutation score (%) for a high-risk feature
+exception_warning_days: 14
 diff_coverage_threshold: 80
 claude_bin: claude
 ignore_paths:
@@ -146,6 +158,7 @@ commands.ingest = (args) => {
   for (const k of r.unknownKeys) warn(`commit references unknown milestone ${k}`)
   if (r.demo?.dir) console.log(`  demo      ${r.demo.dir} (${r.demo.artifacts} artifacts)`)
   else if (r.demo?.status === 'skipped') console.log(`  demo      skipped — ${r.demo.reason}`)
+  else if (r.demo?.status === 'waived') console.log(`  demo      waived by you${r.demo.reason ? ` — ${r.demo.reason}` : ''}`)
   else warn('no demo recorded for this commit')
   if (r.unparsed) warn('no CUI trailers found — commit via the ship-commit skill (/cui:ship)')
 }
@@ -202,6 +215,17 @@ commands.status = (args) => {
   console.log(`  coverage    ${cov ? `project ${pctStr(cov.project_pct)}  last diff ${pctStr(cov.diff_pct)}` : C.dim('none recorded')}`)
   console.log(`  demos owed  ${health.owed ? C.y(String(health.owed)) : C.g('0')}`)
   console.log(`  walkthrough ${health.walk} generated`)
+  const reg = check(cfg)
+  if (reg.summary.total) {
+    const s = reg.summary
+    console.log(`  features    ${C.g(`${s.passing} passing`)}  ${s.failing + s.untested ? C.r(`${s.failing + s.untested} broken`) : '0 broken'}  ` +
+                `${s.planned} planned  ${s.excepted} excepted  ${reg.ok ? C.g('check ok') : C.r(`${reg.errors.length} error(s)`)}`)
+  }
+  const pending = pendingApprovals(cfg)
+  const waiting = pending.proposals.length + pending.exceptions.length
+  if (waiting) console.log(`  approvals   ${C.y(`${waiting} waiting on you`)} — cui approvals`)
+  const expiring = reg.warnings.filter((w) => w.rule === 'expiring')
+  for (const w of expiring) console.log(`  exceptions  ${C.y(w.message)}`)
   console.log(`\n  ${C.dim(`dashboard: http://localhost:${cfg.port}`)}`)
 }
 
@@ -249,6 +273,14 @@ commands.doctor = (args) => {
   for (const e of all(db, `select id, command from entrypoints where command is not null`)) {
     if (!catalogued.has(e.command)) warn(`entrypoint "${e.id}" command is not in commands.yaml: ${e.command}`)
   }
+
+  const reg = readState(cfg)
+  reg.present ? ok(`feature registry: ${reg.features.length} feature(s)`)
+              : warn('no .cui/features.yaml — run /cui:features to build the registry')
+  if (!cfg.test_command) warn('test_command is not set in .cui/config.yaml — cui test, cui tdd and CI need it')
+  existsSync(join(cfg.root, '.github/workflows/cui.yml'))
+    ? ok('CI workflow .github/workflows/cui.yml')
+    : warn('no .github/workflows/cui.yml — nothing enforces the registry outside this machine')
 
   const owed = all(db, `select d.sha, c.short_sha, c.subject from demos d join commits c on c.sha=d.sha
                         where d.required=1 and d.status='missing' order by c.committed_at desc limit 5`)
@@ -335,10 +367,19 @@ commands.demo = (args) => {
     return
   }
 
+  if (sub === 'waive') {
+    const note = args.flags.note && args.flags.note !== true ? args.flags.note : null
+    run(db, `insert into demos(sha, required, status, reason, registered_at) values(?,0,'waived',?,?)
+             on conflict(sha) do update set required=0, status='waived', reason=excluded.reason`,
+      [sha, note, new Date().toISOString()])
+    ok(`recorded ${sha.slice(0, 7)} as shipped without a demo, by choice`)
+    return
+  }
+
   if (sub === 'list' || !sub) {
     for (const d of all(db, `select d.*, c.short_sha, c.subject from demos d join commits c on c.sha=d.sha
                              order by c.committed_at desc limit 30`)) {
-      const mark = d.status === 'present' ? C.g('●') : d.required ? C.r('○') : C.dim('—')
+      const mark = d.status === 'present' ? C.g('●') : d.status === 'waived' ? C.dim('w') : d.required ? C.r('○') : C.dim('—')
       console.log(`${mark} ${d.short_sha}  ${(d.dir ?? d.reason ?? '').slice(0, 50).padEnd(50)} ${C.dim(d.subject ?? '')}`)
     }
     return
@@ -382,6 +423,294 @@ commands.walkthrough = async (args) => {
   }
 }
 
+// ------------------------------------------------------------------ registry
+
+function printCheck(r, { verbose = true } = {}) {
+  const s = r.summary
+  console.log(`\n  features  ${s.total} registered: ${C.g(`${s.passing} passing`)}, ` +
+              `${s.failing ? C.r(`${s.failing} failing`) : '0 failing'}, ` +
+              `${s.untested ? C.r(`${s.untested} untested`) : '0 untested'}, ` +
+              `${s.excepted} excepted, ${s.planned} planned, ${s.retired} retired`)
+  console.log(`  tests     ${s.tests_total} ran, ${s.tests_untagged} untagged` +
+              (r.result_files.length ? C.dim(`  (${r.result_files.length} result file(s), ${r.results_at})`) : ''))
+  if (r.ratchet) {
+    const covered = r.ratchet.items.filter((i) => i.covered)
+    console.log(`  ratchet   vs ${r.ratchet.base.slice(0, 7)}: ${r.ratchet.items.length} obligation change(s), ${covered.length} approved`)
+    if (verbose) for (const i of covered) console.log(`            ${C.g('✓')} ${i.text}`)
+  }
+  if (r.warnings.length && verbose) {
+    console.log()
+    for (const w of r.warnings) warn(w.message)
+  }
+  if (r.errors.length) {
+    console.log()
+    for (const e of r.errors) console.log(`${C.r('✗')} ${e.message}`)
+  }
+  console.log()
+}
+
+commands.registry = (args) => {
+  const { cfg } = context()
+  const sub = args.positional[0] ?? 'check'
+  const base = args.flags.base && args.flags.base !== true ? args.flags.base : null
+
+  if (sub === 'list') {
+    const r = check(cfg)
+    const mark = { passing: C.g('●'), failing: C.r('✗'), untested: C.r('○'), excepted: C.y('◇'), planned: C.dim('○'), retired: C.dim('—') }
+    let ms = null
+    for (const f of [...r.features].sort((a, b) => String(a.milestone).localeCompare(String(b.milestone)))) {
+      if (f.milestone !== ms) { ms = f.milestone; console.log(`\n${C.b(ms ?? '(no milestone)')}`) }
+      const counts = f.status === 'active' ? `${f.passing}/${f.ran}`.padStart(5) : '     '
+      console.log(`  ${mark[f.state]} ${f.id.padEnd(16)} ${counts}  ${f.title ?? ''}${f.exception ? C.y(`  [${f.exception}]`) : ''}`)
+    }
+    console.log()
+    return
+  }
+
+  if (sub === 'check') {
+    const r = check(cfg, { base })
+    if (args.flags.json) { console.log(JSON.stringify(r, null, 2)); process.exit(r.ok ? 0 : 1) }
+    printCheck(r)
+    if (args.flags.record) {
+      if (!r.ok) die('not recording a baseline from a failing check')
+      const b = recordBaseline(cfg, r)
+      b.changed ? ok(`baseline raised for ${b.raised} feature(s) — commit .cui/registry-baseline.json`) : ok('baseline unchanged')
+    }
+    r.ok ? ok('registry check passed') : die(`registry check failed: ${r.errors.length} error(s)`)
+    return
+  }
+  die(`unknown: cui registry ${sub}`)
+}
+
+// Everything CI enforces. Run the tests first (cui test), then this.
+commands.ci = (args) => {
+  const { cfg, db } = context()
+  sync(db, cfg)
+  let failed = 0
+  const fail = (m) => { failed++; console.log(`${C.r('✗')} ${m}`) }
+  get(db, `select count(*) n from milestones where status != 'dropped'`).n ? ok('milestones defined') : fail('no Product Function milestones')
+  getMetaLocked(db) ? ok('blueprint locked') : fail('blueprint is not locked')
+  const base = args.flags.base && args.flags.base !== true ? args.flags.base : null
+  if (!base) warn('no --base given: the ratchet (removed features, tests and exceptions) is not checked')
+  const r = check(cfg, { base })
+  printCheck(r)
+  if (!r.ok) fail(`registry: ${r.errors.length} error(s)`)
+  failed ? die(`ci failed: ${failed} problem(s)`) : ok('ci passed')
+}
+
+const getMetaLocked = (db) => get(db, `select value from meta where key='blueprint_locked'`)?.value === '1'
+
+commands.test = () => {
+  const { cfg } = context()
+  if (!cfg.test_command) die('test_command is not set in .cui/config.yaml')
+  ensureResultDirs(cfg)
+  console.log(C.dim(`$ ${cfg.test_command}`))
+  try { execSync(cfg.test_command, { cwd: cfg.root, stdio: 'inherit' }) }
+  catch (err) { process.exit(err.status ?? 1) }
+}
+
+commands.tdd = (args) => {
+  const { cfg } = context()
+  const [phase, id] = args.positional
+  if (!['red', 'green', 'status'].includes(phase) || !id) die('usage: cui tdd red|green|status FR-XXX-NNN [--cmd "..."]')
+  const cmd = args.flags.cmd && args.flags.cmd !== true ? args.flags.cmd : null
+
+  if (phase === 'status') {
+    const data = TDD.readCycles(cfg, id)
+    if (!data?.cycles.length) return console.log(`${id}: no cycles recorded`)
+    for (const [i, c] of data.cycles.entries()) {
+      const r = c.red.tests.filter((t) => t.status === 'failed').length
+      console.log(`  cycle ${i + 1}  red ${c.red.at} (${r} failing)  ${c.green ? C.g(`green ${c.green.at}`) : C.y('not green yet')}`)
+    }
+    return
+  }
+
+  if (phase === 'red') {
+    const r = TDD.red(cfg, id, { cmd })
+    console.log()
+    for (const w of r.warnings) warn(w)
+    ok(`${id} is red: ${r.failing} of ${r.total} tagged test(s) fail. Read each failure message — ` +
+       'it should fail because the behaviour is missing, not because the test is broken. Now implement.')
+    return
+  }
+
+  const r = TDD.green(cfg, id, { cmd })
+  console.log()
+  ok(`${id} is green: ${r.passing} tagged test(s) pass, including all ${r.red} that were red`)
+  if (r.promoted) ok(`${id} promoted planned → active in .cui/features.yaml`)
+  console.log(`\n  Run the full suite next (cui test), then ship with this trailer:\n  ${C.c(r.trailer)}\n`)
+}
+
+// ----------------------------------------------------------------- approvals
+
+commands.approvals = () => {
+  const { cfg } = context()
+  const { proposals, exceptions } = pendingApprovals(cfg)
+  if (!proposals.length && !exceptions.length) return ok('nothing waiting on you')
+  for (const p of proposals) {
+    console.log(`${C.y('◆')} ${C.b(p.id)}  ${p.title ?? ''}${p.stale ? C.r('  (stale: target changed since)') : ''}`)
+    console.log(`    ${p.kind === 'file' ? `replaces ${p.target}` : `lets ${p.feature} drop to ${p.min} test(s)`}`)
+    console.log(`    ${C.dim(p.why ?? '')}`)
+  }
+  for (const e of exceptions) {
+    console.log(`${C.y('◇')} ${C.b(e.id)}  exception for ${e.feature} (${e.category}, expires ${e.expires})`)
+    console.log(`    ${C.dim(e.reason ?? '')}`)
+    console.log(`    ${C.dim(`verified instead by: ${e.verification ?? '—'}`)}`)
+  }
+  console.log(`\n  ${C.dim('cui approve <id> [--note "..."]   cui reject <id> [--note "..."]   or use the Approvals page')}\n`)
+}
+
+commands.approve = (args) => {
+  const { cfg, db } = context()
+  const id = args.positional[0]
+  if (!id) die('usage: cui approve <proposal-or-exception-id> [--note "..."]')
+  const note = args.flags.note && args.flags.note !== true ? args.flags.note : null
+  const r = approve(cfg, id, { note })
+  sync(db, cfg)
+  ok(`approved ${id}${r.target ? ` — wrote ${r.target}` : ''}`)
+  for (const a of r.allows) console.log(`  ${C.dim('allows')} ${describeItem({ ...a, from: '?' })}`)
+  console.log(C.dim('  recorded in .cui/approvals.log — commit it with the change'))
+}
+
+commands.reject = (args) => {
+  const { cfg } = context()
+  const id = args.positional[0]
+  if (!id) die('usage: cui reject <id> [--note "..."]')
+  reject(cfg, id, { note: args.flags.note && args.flags.note !== true ? args.flags.note : null })
+  ok(`rejected ${id}`)
+}
+
+commands.propose = (args) => {
+  const { cfg } = context()
+  const kind = args.positional[0]
+  const flag = (k) => (args.flags[k] && args.flags[k] !== true ? args.flags[k] : undefined)
+  const p = { title: flag('title'), why: flag('why'), id: flag('id') }
+  if (kind === 'file') {
+    if (!flag('target') || !flag('from')) die('usage: cui propose file --target .cui/blueprint.yaml --from <draft> --title "..." --why "..."')
+    Object.assign(p, { kind: 'file', target: flag('target'), content: readFileSync(resolve(cfg.root, flag('from')), 'utf8') })
+  } else if (kind === 'tests') {
+    if (!flag('feature') || flag('min') === undefined) die('usage: cui propose tests --feature FR-X --min N --title "..." --why "..."')
+    Object.assign(p, { kind: 'tests', feature: flag('feature'), min: Number(flag('min')) })
+  } else die('usage: cui propose file|tests ...')
+  if (!p.title) die('--title is required')
+  const r = createProposal(cfg, p)
+  ok(`wrote ${r.file}. It does nothing until a human approves it: cui approve ${r.id}, or the CUI Approvals page.`)
+}
+
+commands.ratchet = (args) => {
+  const { cfg } = context()
+  const sub = args.positional[0]
+  const base = args.flags.base && args.flags.base !== true ? args.flags.base : null
+  if (sub !== 'accept' || !base) die('usage: cui ratchet accept --base <ref> [--note "..."]  (records approval for changes you made by hand)')
+  const r = acceptRatchet(cfg, base, { note: args.flags.note && args.flags.note !== true ? args.flags.note : null })
+  if (!r.items.length) return ok('nothing to accept')
+  for (const i of r.items) ok(`approved: ${i.text}`)
+}
+
+// ------------------------------------------------------------------ mutation
+
+commands.mutation = (args) => {
+  const { cfg } = context()
+  const features = readState(cfg).features.filter((f) => f?.id)
+  const flag = (k) => (args.flags[k] && args.flags[k] !== true ? args.flags[k] : null)
+  let selected
+  if (flag('feature')) {
+    const ids = flag('feature').split(',')
+    selected = features.filter((f) => ids.includes(f.id))
+    const unknown = ids.filter((id) => !selected.some((f) => f.id === id))
+    if (unknown.length) die(`not in the registry: ${unknown.join(', ')}`)
+  } else if (flag('base')) {
+    // CI on a pull request: only high-risk features whose source this branch touched.
+    selected = changedFeatures(cfg, features.filter(needsMutation), flag('base'))
+    if (!cfg.mutation_command) return ok('mutation_command not set — skipping mutation testing')
+    if (!selected.length) return ok('no high-risk feature source changed — nothing to mutate')
+  } else {
+    selected = features.filter(needsMutation)
+    if (!selected.length) return ok('no active risk: high features — nothing to mutate')
+  }
+  console.log(C.dim(`mutating ${selected.length} feature(s): ${selected.map((f) => f.id).join(', ')}\n`))
+  const results = runMutation(cfg, selected, { cmd: flag('cmd') })
+  console.log()
+  for (const r of results) {
+    const mark = r.passed ? C.g('✓') : C.r('✗')
+    console.log(`${mark} ${r.feature.padEnd(16)} ${r.score === null ? C.dim('no mutants') : `${r.score}%`.padStart(6)}  ` +
+                `(threshold ${r.threshold}%, ${r.killed} killed, ${r.survived} survived, ${r.no_coverage} uncovered)`)
+    for (const m of r.passed ? [] : r.survivors.slice(0, 8)) {
+      console.log(C.dim(`    ${m.status.padEnd(10)} ${m.file}:${m.line}  ${m.mutator}${m.replacement ? ` → ${String(m.replacement).slice(0, 50)}` : ''}`))
+    }
+  }
+  console.log(C.dim('\n  summaries written to .cui/mutation/ — commit them with the change'))
+  if (results.some((r) => !r.passed)) die('a high-risk feature is below its mutation threshold: add tests that kill the surviving mutants')
+}
+
+// ---------------------------------------------------------------- exceptions
+
+function exceptionRows(cfg, within) {
+  const today = new Date().toISOString().slice(0, 10)
+  return readState(cfg).exceptions.filter((e) => e?.id && e.status !== 'rejected').map((e) => ({
+    ...e, days: e.expires ? daysBetween(today, String(e.expires)) : null, in_force: exceptionInForce(e, today),
+  })).filter((e) => within === null || e.status !== 'approved' || (e.days !== null && e.days <= within))
+}
+
+commands.exceptions = (args) => {
+  const { cfg } = context()
+  const within = args.flags.expiring ? Number(args.flags.expiring === true ? cfg.exception_warning_days ?? 14 : args.flags.expiring) : null
+  const rows = exceptionRows(cfg, within)
+  if (!rows.length) return ok(within === null ? 'no exceptions' : `nothing expires within ${within} days`)
+  for (const e of rows) {
+    const when = e.days === null ? 'no expiry' : e.days < 0 ? C.r(`expired ${-e.days}d ago`) : e.days <= (cfg.exception_warning_days ?? 14) ? C.y(`expires in ${e.days}d`) : `expires in ${e.days}d`
+    console.log(`${e.status === 'approved' ? (e.in_force ? C.g('●') : C.r('●')) : C.y('◇')} ${e.id.padEnd(6)} ${String(e.feature).padEnd(16)} ${e.category.padEnd(11)} ${when}  ${C.dim(e.status)}`)
+  }
+}
+
+// -------------------------------------------------------------------- nightly
+
+// The scheduled CI job: everything that rots slowly. Writes a markdown report; sets
+// findings=true in $GITHUB_OUTPUT so the workflow can open or update an issue.
+commands.nightly = (args) => {
+  const { cfg } = context()
+  const days = Number(cfg.exception_warning_days ?? 14)
+  const sections = []
+
+  const ex = exceptionRows(cfg, days).filter((e) => e.status === 'approved' || e.status === 'proposed')
+  if (ex.length) {
+    sections.push(['Exceptions needing attention', ex.map((e) =>
+      `- **${e.id}** (${e.feature}, ${e.category}) — ${e.status === 'proposed' ? 'still awaiting approval'
+        : e.days < 0 ? `**expired ${-e.days} day(s) ago**` : `expires in ${e.days} day(s) (${e.expires})`}. Owner: ${e.owner ?? '—'}. ${e.reason ?? ''}`)])
+  }
+
+  let mutation = []
+  if (cfg.mutation_command && args.flags['no-mutation'] !== true) {
+    const targets = readState(cfg).features.filter(needsMutation)
+    if (targets.length) {
+      try { mutation = runMutation(cfg, targets) } catch (err) { sections.push(['Mutation testing failed to run', [`- ${err.message}`]]) }
+    }
+    const weak = mutation.filter((r) => !r.passed)
+    if (weak.length) {
+      sections.push(['High-risk features below their mutation threshold', weak.map((r) =>
+        `- **${r.feature}** ${r.score ?? 'no mutants'}% (threshold ${r.threshold}%): ${r.survived} survived, ${r.no_coverage} uncovered` +
+        r.survivors.slice(0, 5).map((m) => `\n  - \`${m.file}:${m.line}\` ${m.mutator}${m.replacement ? ` → \`${String(m.replacement).slice(0, 40)}\`` : ''}`).join(''))])
+    }
+  }
+
+  const reg = check(cfg)
+  const errs = reg.errors.filter((e) => e.rule !== 'mutation' && e.rule !== 'expired' && e.rule !== 'approval')
+  if (errs.length) sections.push(['Registry check errors', errs.map((e) => `- ${e.message}`)])
+
+  const findings = sections.length > 0
+  const md = [`# CUI nightly — ${new Date().toISOString().slice(0, 10)}`, '',
+    findings ? `${sections.length} area(s) need attention.` : 'Nothing needs attention.', '',
+    ...sections.flatMap(([title, lines]) => [`## ${title}`, '', ...lines, '']),
+    mutation.length ? `Mutation tested: ${mutation.map((r) => `${r.feature} ${r.score ?? '–'}%`).join(', ')}` : '',
+  ].join('\n')
+
+  const out = args.flags.markdown && args.flags.markdown !== true ? args.flags.markdown : null
+  if (out) writeFileSync(resolve(cfg.root, out), `${md}\n`)
+  else console.log(md)
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `findings=${findings}\n`)
+  if (args.flags.strict && findings) process.exit(1)
+}
+
 commands.help = () => {
   console.log(`
 ${C.b('cui')} — Central UI for this repository
@@ -398,8 +727,23 @@ ${C.b('cui')} — Central UI for this repository
   ${C.c('cui coverage')} [run|report]     run tests with coverage, report project + diff coverage
   ${C.c('cui demo')} register --dir D     attach a demo directory to a commit
   ${C.c('cui demo')} skip --reason "..."  record why a commit needs no demo
+  ${C.c('cui demo')} waive [--note "..."]  record that you chose to ship without one
   ${C.c('cui walkthrough')} generate      generate a walkthrough with Claude Code
   ${C.c('cui install-hooks')}             (re)install the git post-commit hook
+
+  ${C.c('cui test')}                      run test_command (it must write JUnit XML)
+  ${C.c('cui registry')} [check|list]     check every active feature has passing tests
+                 [--base REF] [--record]  …and nothing was dropped since REF; raise the baseline
+  ${C.c('cui ci')} --base REF             everything CI enforces
+  ${C.c('cui tdd')} red|green|status FR-X record a red→green cycle for one feature
+  ${C.c('cui mutation')} [--feature X|--base REF]  mutation-test risk: high features
+  ${C.c('cui exceptions')} [--expiring N] list exceptions, or those expiring within N days
+  ${C.c('cui nightly')} [--markdown F]    expiring exceptions, mutation scores, registry — for the nightly job
+
+  ${C.c('cui approvals')}                 what is waiting on a human
+  ${C.c('cui approve')} <id> / ${C.c('reject')} <id>  decide a proposal or exception (humans only)
+  ${C.c('cui propose')} file|tests ...    write a proposal (blueprint/registry change, test removal)
+  ${C.c('cui ratchet')} accept --base REF  approve changes you made to the YAML by hand
 `)
 }
 
