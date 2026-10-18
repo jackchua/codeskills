@@ -41,17 +41,25 @@ claude
 > /plugin install cui@codeskills
 ```
 
-**Into a new project:**
+**Into a new project**, from Claude Code in that directory:
+
+```
+> /cui:init
+```
+
+It runs the scaffolder that ships with the installed plugin, so the scaffolded app always
+matches the plugin's skills. Without Claude Code, either of these does the same:
 
 ```bash
-mkdir ~/source/my-thing && cd ~/source/my-thing
-node ~/source/codeskills/scripts/scaffold.mjs
+node ~/.claude/plugins/marketplaces/codeskills/scripts/scaffold.mjs   # the plugin's copy
+npx github:jackchua/codeskills                                        # straight from GitHub
 ```
 
 That copies in the CUI app, installs and builds it, creates `.cui/`, and installs a
 `post-commit` git hook. Then, in Claude Code:
 
 ```
+/cui:init            scaffold the CUI into this project
 /cui:pf              define the Product Function milestones
 /cui:blueprint       lock the structure, entry points and commands
 /cui:features        register every feature with an ID and a test plan
@@ -195,7 +203,7 @@ Cobertura, coverage.py and Go profiles are all parsed.
 ```
 plugins/cui/
   skills/        seven skills
-  commands/      /cui:pf /cui:blueprint /cui:features /cui:tdd /cui:ship /cui:walkthrough /cui:status
+  commands/      /cui:init /cui:pf /cui:blueprint /cui:features /cui:tdd /cui:ship /cui:walkthrough /cui:status
   hooks/         gate.mjs (the PreToolUse gate), session-context.mjs
 template/
   cui/
